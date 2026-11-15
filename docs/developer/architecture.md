@@ -15,7 +15,7 @@ runtime-paths.js 与 runtime_paths.py 从程序所在位置解析源码与运行
 
 基础控件在 controls.css，共享资产组件在 asset-settings.css，向导和工作台分别使用 setup-wizard.css 与 layout-responsive.css。向导固定顶部步骤和底部操作，中央独立滚动；工作台按实际工具栏高度分配空间，停靠面板有最小可用尺寸，空间不足时工作区可滚动。表单高度按字体行高和内边距计算，避免 CJK 文字被固定高度裁切。
 
-窗口使用 Electron screen 的 DIP workArea 限制尺寸；跨屏移动、显示参数变化后重新约束。保留 Chromium 系统 DPI 缩放及 Unity 预览的 CSS/物理像素换算，显示比例变化时刷新预览坐标。API 依据：https://www.electronjs.org/docs/latest/api/screen 。
+窗口使用 Electron screen 的 DIP workArea 限制尺寸；跨屏移动、显示参数变化后重新约束。保留 Chromium 系统 DPI 缩放及 Unity 预览的 CSS/物理像素换算，显示比例变化时刷新预览坐标。API 依据：[Electron screen](https://www.electronjs.org/docs/latest/api/screen)。
 
 语音与解包各有独立进度条。语音下载显示当前文件字节进度和文件序号；校验、解压、安装显示不定进度。资源准备显示扫描、解包、Player 转换、2D 场景、面部特效、两类音频解码及结果检查阶段，明确为阶段估算，不估计剩余时间。取消、失败、部分完成分别呈现，只有成功完成显示满进度。
 

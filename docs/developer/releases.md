@@ -10,7 +10,7 @@
 
 顺序：依赖安装 → Node／Python 检查 → Unity 人工 GPU 检查与构建 → 便携 Python 准备 → Electron/Player/Python/工具/预设组包 → 哈希清单 → 上传 artifact → 托管 runner 使用最小 contents:write 权限创建 Release。只有成功构建才进入发布；带连字符的版本标为 prerelease。失败不上传半成品 Release，不覆盖同名已发布版本。
 
-当前 release-policy.json 保持关闭：代码许可证、制作人图片的公开再分发依据、具体媒体工具构建的分发材料待确认。分别更新 projectLicense、commonAssetsRedistribution、runtimeToolsRedistribution 后再启用 releaseEnabled。CI 脚本已经准备，用户已创建主仓库；尚未推送源码或配置 runner，GitHub 实际发布未测试。
+当前 release-policy.json 保持关闭：代码许可证、制作人图片的公开再分发依据、具体媒体工具构建的分发材料待确认。分别更新 projectLicense、commonAssetsRedistribution、runtimeToolsRedistribution 后再启用 releaseEnabled。CI 脚本已准备。源码同步使用 main 分支，仅触发普通 Checks；不创建版本标签，不开启 release-policy.json。专用 runner、release environment 与首次远程 Release 仍待配置和验证。
 
 ## 本地组包
 
@@ -20,7 +20,7 @@
 
 本地候选工具输入已保留 FFmpeg 6.0（Gyan full build）的 GPL v3 文件与构建 README，以及 vgmstream r2168 的 COPYING、README、USAGE。当前仅用于本机候选验证，公开版本还需确定工具构建及其完整分发材料；不要仅凭文件名 THIRD_PARTY_NOTICES.txt 判断已经审核完毕。
 
-源码包含完整声音下载清单；引擎和声库由用户向导安装到数据目录，不默认占用下载包体积。新版本预设使用稳定 ID 和修订标记，已有用户修改不被覆盖。
+源码包含带修订与哈希的翻译提示词、180 条发音替换词以及完整声音下载清单；引擎和声库由用户向导安装到数据目录，不默认占用下载包体积。新版本预设使用稳定 ID 和修订标记，已有用户修改不被覆盖。
 
 ## 独立文档站
 
