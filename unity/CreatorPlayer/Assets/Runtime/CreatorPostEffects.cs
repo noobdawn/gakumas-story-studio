@@ -4,7 +4,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-[Serializable] public class CreatorEffectParameters {public float tone,bloom,threshold,radius,edgeProtection,lineJitter,bandStrength,bandWidth,rollSpeed,chromaOffset,signalNoise;}
+[Serializable] public class CreatorEffectParameters {public float tone,bloom,threshold,radius,softness,darkness,edgeProtection,lineJitter,bandStrength,bandWidth,rollSpeed,chromaOffset,signalNoise;}
 [Serializable] public class CreatorEffectLayer {public int effectVersion;public string effectType;public CreatorEffectParameters parameters;public float weight,strength;public int seed;}
 [Serializable] public class CreatorEffectTarget {public string target;public CreatorEffectLayer[] layers;}
 [Serializable] public class CreatorEffectState {public bool enabled,serial;public float time;public CreatorEffectTarget[] targets;}
@@ -27,6 +27,7 @@ public sealed class CreatorPostEffects:IDisposable {
   if(l==null||l.effectVersion!=2||l.parameters==null||!Range(l.weight,0,1)||!Range(l.strength,0,1)||l.seed<0||l.seed>999999)throw new Exception("Dedicated effect v2 required");var p=l.parameters;bool valid=false;
   switch(l.effectType){
    case "memory":valid=Range(p.tone,0,1)&&Range(p.bloom,0,1)&&Range(p.threshold,0,2)&&Range(p.radius,0,3);break;
+   case "thought":valid=Range(p.radius,0,1)&&Range(p.softness,.01f,1)&&Range(p.darkness,0,1);break;
    case "television":valid=Range(p.lineJitter,0,1)&&Range(p.bandStrength,0,1)&&Range(p.bandWidth,.02f,.5f)&&Range(p.rollSpeed,0,2)&&Range(p.chromaOffset,0,1)&&Range(p.signalNoise,0,1);break;
    case "soft":valid=Range(p.radius,0,3)&&Range(p.edgeProtection,0,1);break;
   }if(!valid)throw new Exception("Unknown dedicated effect or invalid algorithm parameters");
@@ -44,6 +45,7 @@ public sealed class CreatorPostEffects:IDisposable {
    var p=l.parameters;int pass;
    switch(l.effectType){
     case "memory":pass=0;material.SetVector("_EffectParams",new Vector4(p.tone,p.bloom,p.threshold,p.radius));break;
+    case "thought":pass=7;material.SetVector("_EffectParams",new Vector4(p.radius,p.softness,p.darkness,0));break;
     case "television":pass=5;material.SetVector("_EffectParams",new Vector4(p.lineJitter,p.bandStrength,p.bandWidth,p.rollSpeed));material.SetVector("_EffectParams2",new Vector4(p.chromaOffset,p.signalNoise,0,0));break;
     case "soft":pass=6;material.SetVector("_EffectParams",new Vector4(p.radius,p.edgeProtection,0,0));break;
     default:throw new Exception("Unknown effect algorithm");

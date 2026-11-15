@@ -12,6 +12,7 @@ Shader "Hidden/Creator/StoryEffects" {
  float4 alphaMix(float4 a,float4 b,float w){float alpha=lerp(a.a,b.a,w);return float4(lerp(a.rgb*a.a,b.rgb*b.a,w)/max(alpha,.00001),alpha);}
  float4 effectMix(float2 uv,float4 processed){float4 src=tex2D(_Clean,uv);return alphaMix(tex2D(_Lower,uv),alphaMix(src,processed,_Strength),_Weight);}
  #include "CreatorMemory.cginc"
+ #include "CreatorThought.cginc"
  #include "CreatorTelevision.cginc"
  #include "CreatorSoft.cginc"
  float4 copyLayer(v2f_img i):SV_Target {return tex2D(_MainTex,i.uv);}
@@ -56,6 +57,11 @@ Shader "Hidden/Creator/StoryEffects" {
  #pragma target 3.0
  #pragma vertex vert_img
  #pragma fragment softEffect
+ ENDCG}
+ Pass {CGPROGRAM
+ #pragma target 3.0
+ #pragma vertex vert_img
+ #pragma fragment thoughtEffect
  ENDCG}
 
  }

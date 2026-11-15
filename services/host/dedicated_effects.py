@@ -3,6 +3,7 @@ import math
 
 SCHEMAS = {
     'memory': {'tone': (0, 1), 'bloom': (0, 1), 'threshold': (0, 2), 'radius': (0, 3)},
+    'thought': {'radius': (0, 1), 'softness': (.01, 1), 'darkness': (0, 1)},
     'television': {'lineJitter': (0, 1), 'bandStrength': (0, 1), 'bandWidth': (.02, .5), 'rollSpeed': (0, 2), 'chromaOffset': (0, 1), 'signalNoise': (0, 1)},
     'soft': {'radius': (0, 3), 'edgeProtection': (0, 1)},
 }
@@ -10,7 +11,7 @@ SCHEMAS = {
 def number(value, low, high):
     return type(value) in (int, float) and math.isfinite(value) and low <= value <= high
 
-def validate_message(message, capable=True):
+def validate_message(message, capable=True, thought_capable=True):
     post, composition = message.get('postEffects') or {}, message.get('composition') or {}
     groups = [t.get('layers', []) for t in post.get('targets', [])]
     groups += [n.get(k, []) for n in composition.get('nodes', []) for k in ('effects', 'leftEffects', 'rightEffects')]
@@ -25,6 +26,8 @@ def validate_message(message, capable=True):
             if not capable:
                 raise ValueError('请使用 build-dedicated-effects-20261115-v3 或支持专用效果 v2 的 Player')
             schema = SCHEMAS.get(layer.get('effectType'))
+            if layer.get('effectType') == 'thought' and not thought_capable:
+                raise ValueError('当前 Player 不支持心理活动暗角，请更新 build')
             p = layer.get('parameters')
             if layer.get('effectVersion') != 2 or not schema or not isinstance(p, dict) or p.keys() != schema.keys():
                 raise ValueError('专用画面算法类型／参数不匹配')

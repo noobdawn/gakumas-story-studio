@@ -10,6 +10,7 @@ if ($ReusePlayer) {
  $unityChanges=git -C $repoRoot status --porcelain -- unity
  if($LASTEXITCODE -or $unityChanges){throw 'Commit and rebuild Unity changes before reusing a Player.'}
  if(!(Test-Path -LiteralPath (Join-Path $build 'runtime/player/creator-dedicated-effects-v2'))){throw 'No existing compatible Player to reuse.'}
+ if(!(Test-Path -LiteralPath (Join-Path $build 'runtime/player/creator-thought-filter-v1'))){throw 'Rebuild Player to include the thought vignette filter.'}
 }
 if (!$Tools) {$Tools=Join-Path $build 'runtime/tools'}
 if (!$PythonRuntime) {$PythonRuntime=Join-Path $build 'runtime/python'}

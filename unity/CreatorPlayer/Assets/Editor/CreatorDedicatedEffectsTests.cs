@@ -34,6 +34,21 @@ public static class CreatorDedicatedEffectsTests {
    foreach(var change in new Action<CreatorEffectLayer>[] {l=>l.effectType="bad",l=>l.effectVersion=1,l=>l.parameters.bandWidth=0,l=>l.parameters.signalNoise=float.NaN}){var bad=Layer("television");change(bad);bool rejected=false;try{CreatorPostEffects.ValidateLayers(new[]{bad});}catch{rejected=true;}Check(rejected,"invalid wire layer rejected "+checks.Count);}
    texture.SetPixels(Enumerable.Repeat(new Color(.25f,.25f,.25f,.4f),input.Length).ToArray());texture.Apply();soft.parameters.edgeProtection=0;
    var uniform=sample(new[]{soft},2);Check(uniform.All(v=>Mathf.Abs(v.r-.25f)<.001f&&Mathf.Abs(v.a-.4f)<.001f),"linear light and fractional alpha preserved");
+   // Product semantics: recall is grayscale even when bloom is enabled.
+   texture.SetPixels(input);texture.Apply();memory.parameters.tone=1;
+   foreach(float bloom in new[]{0f,.5f}){memory.parameters.bloom=bloom;var gray=sample(new[]{memory},2);Check(gray.All(v=>Mathf.Abs(v.r-v.g)<.001f&&Mathf.Abs(v.g-v.b)<.001f),"memory grayscale with bloom "+bloom);}
+   texture.SetPixels(Enumerable.Repeat(new Color(.25f,.5f,.75f,.4f),input.Length).ToArray());texture.Apply();
+   var thought=Layer("thought");thought.parameters.radius=.35f;thought.parameters.softness=.55f;thought.parameters.darkness=.65f;
+   var vignette=sample(new[]{thought},2);int center=32*96+48,edge=32*96+95,shoulder=32*96+72;
+   Check(Mathf.Abs(vignette[center].r-.25f)<.001f&&Mathf.Abs(vignette[center].b-.75f)<.001f,"thought keeps center unchanged");
+   Check(vignette[edge].r<.1f&&vignette[shoulder].r>vignette[edge].r&&vignette[shoulder].r<vignette[center].r,"thought dark edges with smooth shoulder");
+   Check(vignette.All(v=>Mathf.Abs(v.a-.4f)<.001f&&Mathf.Abs(v.b-3*v.r)<.002f),"thought preserves alpha and hue");
+   thought.parameters.softness=1;Check(sample(new[]{thought},2)[shoulder].r>vignette[shoulder].r,"thought softness widens falloff");thought.parameters.softness=.55f;
+   thought.parameters.radius=.7f;Check(Mathf.Abs(sample(new[]{thought},2)[shoulder].r-.25f)<.001f,"thought radius expands clear center");thought.parameters.radius=.35f;
+   thought.strength=0;Check(ReferenceEquals(texture,fx.ApplyLayers(texture,new[]{thought},96,64)),"thought zero strength exact bypass");thought.strength=1;
+   thought.parameters.darkness=0;Check(sample(new[]{thought},2).All(v=>Mathf.Abs(v.r-.25f)<.001f),"thought zero darkness unchanged");thought.parameters.darkness=.65f;
+   var combined=sample(new[]{memory,thought},2);Check(combined.All(v=>Mathf.Abs(v.r-v.g)<.001f&&Mathf.Abs(v.g-v.b)<.001f)&&combined[edge].r<combined[center].r,"recall and thought stack");
+   foreach(var change in new Action<CreatorEffectLayer>[] {l=>l.parameters.softness=0,l=>l.parameters.darkness=2,l=>l.parameters.radius=float.NaN}){var bad=Layer("thought");bad.parameters.radius=.35f;bad.parameters.softness=.55f;bad.parameters.darkness=.65f;change(bad);bool rejected=false;try{CreatorPostEffects.ValidateLayers(new[]{bad});}catch{rejected=true;}Check(rejected,"invalid thought parameters rejected "+checks.Count);}
    // Category actor effects must composite the displaced mask, not the old mask.
    var composite=new Material(shader);var tiny=new List<Texture2D>();Func<Color,Texture2D> solid=color=>{var tx=new Texture2D(1,1,TextureFormat.RGBAFloat,false,true);tx.SetPixel(0,0,color);tx.Apply();tiny.Add(tx);return tx;};var result=new RenderTexture(4,4,0,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);result.Create();
    try{composite.SetTexture("_Clean",solid(new Color(0,.25f,0,1)));composite.SetTexture("_Background",solid(new Color(0,.25f,0,1)));composite.SetTexture("_Black",solid(Color.black));composite.SetTexture("_White",solid(new Color(.5f,.5f,.5f,1)));composite.SetTexture("_Actors",solid(new Color(1,0,0,0)));GL.sRGBWrite=false;Graphics.Blit(solid(new Color(.5f,.125f,0,1)),result,composite,3);Check(Pixels(result).All(v=>Mathf.Abs(v.r)<.001f&&Mathf.Abs(v.g-.25f)<.001f),"actor category composites displaced alpha");}

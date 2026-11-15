@@ -446,7 +446,7 @@ def main():
                         if not 0 < size <= (2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint=='state' else 20000): raise ValueError('invalid length')
                         message = json.loads(self.rfile.read(size))
                         if endpoint == 'state':
-                            dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file())
+                            dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
                             message['token'] = token
                             message['mediaDraws'] = visual_media.resolve_draws(library_root,message.get('mediaDraws',[]))
                             data = (json.dumps(message, allow_nan=False, separators=(',', ':')) + '\n').encode()

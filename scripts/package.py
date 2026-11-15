@@ -11,6 +11,7 @@ def main():
         if not (a.tools/filename).is_file():raise SystemExit('Missing tool: '+filename)
     if not (a.tools/'THIRD_PARTY_NOTICES.txt').is_file():raise SystemExit('Runtime tools require redistribution notices')
     if not (a.player/'creator-dedicated-effects-v2').is_file():raise SystemExit('Player lacks dedicated effects contract')
+    if not (a.player/'creator-thought-filter-v1').is_file():raise SystemExit('Player lacks thought vignette filter')
     electron=ROOT/'apps/desktop/electron/node_modules/electron/dist'
     for source in [electron,a.python,a.tools,a.player,ROOT/'apps',ROOT/'services',ROOT/'resources']:
         if output==source.resolve() or source.resolve() in output.parents:raise SystemExit('Output must be outside all runtime/source inputs')
