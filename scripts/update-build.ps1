@@ -46,6 +46,7 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 $promoted=$false
 $previousLibrary=$env:CREATOR_LIBRARY_DIR
 $previousPath=$env:PATH
+$previousUITemp=$env:GSS_UI_CHECK_TEMP
 try {
  $env:PATH="$Tools;$env:PATH"
  $env:CREATOR_LIBRARY_DIR=Join-Path $stage 'test-data'
@@ -58,6 +59,8 @@ try {
  New-Item -ItemType Directory -Path $reportPath -Force | Out-Null
  $electron=Join-Path $repoRoot 'apps/desktop/electron/node_modules/electron/dist/electron.exe'
  $harness=Join-Path $repoRoot 'apps/desktop/electron/tests/ui-layout-check.cjs'
+ $env:GSS_UI_CHECK_TEMP=Join-Path $stage 'ui-test'
+ New-Item -ItemType Directory -Path $env:GSS_UI_CHECK_TEMP | Out-Null
  $uiCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$harness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'ui-check.log') -RedirectStandardError (Join-Path $reportPath 'ui-check-error.log')
  if($uiCheck.ExitCode){throw 'Headless UI layout checks failed'}
  if($ReusePlayer){$player=Join-Path $build 'runtime/player';Set-Content -LiteralPath (Join-Path $reportPath 'player.txt') -Value 'Reused existing Player; desktop/host-only update.'}
@@ -75,6 +78,7 @@ try {
 } finally {
  $env:CREATOR_LIBRARY_DIR=$previousLibrary
  $env:PATH=$previousPath
+ $env:GSS_UI_CHECK_TEMP=$previousUITemp
  $report=Join-Path $repoRoot '.local/last-build-report'
  if(Test-Path -LiteralPath (Join-Path $stage 'report')) {
   if(Test-Path -LiteralPath $report){RemoveStage $report}

@@ -3,7 +3,7 @@ const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
 const {pathToFileURL}=require('node:url');
 const ui=path.resolve(__dirname,'../../ui');
-const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'gss-layout-'));
+const temporary=fs.mkdtempSync(path.join(process.env.GSS_UI_CHECK_TEMP||os.tmpdir(),'gss-layout-'));
 app.setPath('userData',path.join(temporary,'profile'));
 app.disableHardwareAcceleration();
 const preload=path.join(temporary,'fixture.cjs');
