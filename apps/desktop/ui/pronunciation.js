@@ -1,6 +1,5 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.CreatorPronunciation=factory();})(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
- const defaults=[{from:'Producer',to:'プロデューサー'},{from:'制作人',to:'プロデューサー'}];
  function validate(rules){
   if(!Array.isArray(rules)||rules.length>200)throw Error('替换词最多 200 条');
   const seen=new Set();return rules.map(r=>{
@@ -34,5 +33,5 @@
   return normalized;
  }
  function voicevox(text,rules){return normalizeEllipses(apply(text,rules));}
- return {defaults,validate,apply,normalizeEllipses,voicevox};
+ return {validate,apply,normalizeEllipses,voicevox};
 });

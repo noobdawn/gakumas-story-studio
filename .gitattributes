@@ -3,3 +3,5 @@
 *.meta text eol=lf
 *.sh text eol=lf
 *.ps1 text eol=crlf
+# Keep hash-verified public editor presets identical across Windows checkouts.
+/resources/editor-defaults/*.json text eol=lf

@@ -16,7 +16,7 @@ def main():
         if output==source.resolve() or source.resolve() in output.parents:raise SystemExit('Output must be outside all runtime/source inputs')
     shutil.copytree(electron,output);(output/'electron.exe').rename(output/'GSS.exe')
     def ignore(directory,names):return [n for n in names if n in ['node_modules','tests','__pycache__'] or n.startswith('test_') or n.endswith('.pyc')]
-    for folder in ['apps','services','resources/common','resources/voicevox','docs']:
+    for folder in ['apps','services','resources/common','resources/voicevox','resources/editor-defaults','docs']:
         shutil.copytree(ROOT/folder,output/folder,ignore=ignore)
     for folder,source in [('runtime/python',a.python),('runtime/tools',a.tools),('runtime/player',a.player)]:shutil.copytree(source,output/folder)
     app=output/'resources/app';app.mkdir(exist_ok=True)

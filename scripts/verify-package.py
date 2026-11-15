@@ -20,6 +20,9 @@ def main():
         assert root in file.parents and not (root/name).is_symlink(),name
         with file.open('rb') as stream:
             assert hashlib.file_digest(stream,'sha256').hexdigest()==digest,name
+    defaults=json.loads((root/'resources/editor-defaults/defaults.json').read_text('utf-8'))
+    assert set(defaults)=={'version','revision','prompt','rules'}
+    assert defaults['prompt'] and defaults['rules']
     with tempfile.TemporaryDirectory(prefix='gss-package-check-') as temporary:
         env={k:v for k,v in os.environ.items() if not k.startswith('CREATOR_')}
         env['CREATOR_LIBRARY_DIR']=temporary
@@ -28,7 +31,7 @@ def main():
         subprocess.run([str(py),'-B','-X','utf8','-c','import UnityPy,PIL,cryptography,numpy,pydantic,runtime_paths,resource_catalog,export_video; print("Bundled Python and host imports passed")'],cwd=temporary,env=env,check=True)
         env['ELECTRON_RUN_AS_NODE']='1'
         marker=Path(temporary)/'electron-check.txt'
-        code="const path=require('node:path'),assert=require('node:assert/strict');const root=process.argv[1];const r=require(path.join(root,'apps/desktop/electron/runtime-paths'));r.configure();assert.equal(r.root,root);assert.equal(r.python(),path.join(root,'runtime/python/python.exe'));require(path.join(root,'apps/desktop/electron/setup-wizard'));require('node:fs').writeFileSync(process.argv[2],'passed');"
+        code="const path=require('node:path'),assert=require('node:assert/strict');const root=process.argv[1];const r=require(path.join(root,'apps/desktop/electron/runtime-paths'));r.configure();assert.equal(r.root,root);assert.equal(r.python(),path.join(root,'runtime/python/python.exe'));require(path.join(root,'apps/desktop/electron/setup-wizard'));const preset=require(path.join(root,'resources/editor-defaults/defaults.json'));assert.equal(require(path.join(root,'apps/desktop/electron/deepseek-translation')).DEFAULT_PROMPT,preset.prompt);assert.deepEqual(require(path.join(root,'apps/desktop/electron/pronunciation-store')).defaults,preset.rules);require('node:fs').writeFileSync(process.argv[2],'passed');"
         subprocess.run([str(root/'GSS.exe'),'-e',code,str(root),str(marker)],cwd=temporary,env=env,check=True,timeout=30)
         assert marker.read_text()=='passed', 'Electron runtime check did not execute'
     print(json.dumps({'files':len(manifest),'hashes':'passed','portableImports':'passed','visibleUI':'not tested'}))

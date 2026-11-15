@@ -12,12 +12,18 @@ def main():
     for p in (ROOT/'apps/desktop').rglob('*.js'):
         if 'node_modules' in p.parts:continue
         subprocess.run(['node','--check',str(p)],check=True,capture_output=True)
-    for manifest in ['resources/common/manifest.json','resources/voicevox/models.json','resources/voicevox/components.json']:
+    for manifest in ['resources/common/manifest.json','resources/voicevox/models.json','resources/voicevox/components.json','resources/editor-defaults/manifest.json']:
         data=json.loads((ROOT/manifest).read_text('utf-8'))
         if manifest.startswith('resources/common'):
             for item in data['assets']:
                 p=ROOT/'resources/common'/item['file']
                 assert hashlib.sha256(p.read_bytes()).hexdigest()==item['sha256']
+    preset_manifest=json.loads((ROOT/'resources/editor-defaults/manifest.json').read_text('utf-8'))
+    raw=(ROOT/'resources/editor-defaults/defaults.json').read_bytes()
+    assert hashlib.sha256(raw).hexdigest()==preset_manifest['sha256']
+    preset=json.loads(raw)
+    assert set(preset)=={'version','revision','prompt','rules'}, 'Only public settings belong in presets'
+    assert len(preset['prompt'])==preset_manifest['promptLength'] and len(preset['rules'])==preset_manifest['ruleCount']
     host=ast.parse((ROOT/'services/host/host.py').read_text('utf-8-sig'))
     allowed=next(set(ast.literal_eval(n.comparators[0])) for n in ast.walk(host) if isinstance(n,ast.Compare) and isinstance(n.left,ast.Name) and n.left.id=='name' and isinstance(n.ops[0],ast.NotIn) and isinstance(n.comparators[0],ast.Tuple) and 'index.html' in ast.literal_eval(n.comparators[0]))
     linked=set(re.findall(r'(?:src|href)="\./([^"#]+)"',(ROOT/'apps/desktop/ui/index.html').read_text('utf-8')))
