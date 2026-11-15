@@ -1,0 +1,20 @@
+/* Shared controls use CSS pixels; Chromium applies the display's DPI scale. */
+:root{color-scheme:dark;--font:'Microsoft YaHei UI','Microsoft YaHei',sans-serif;--bg:#222428;--text:#dcdee0;--muted:#a5adba;--line:#414956}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+button,input,select,textarea{font-family:var(--font);line-height:1.5}
+button{cursor:pointer}
+button:disabled{cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #aabaff;outline-offset:2px}
+/* A fixed height plus padding can leave no space for CJK glyphs. */
+select,input.input,textarea.input{height:auto;min-height:calc(1.5em + .7em + 2px);padding:.35em .6em;min-width:0;max-width:100%}
+textarea{line-height:1.6}
+.task-progress{padding:12px 14px;border:1px solid var(--line);border-radius:6px;background:#1c2128;margin:12px 0;min-width:0}
+.task-progress p{margin:0 0 6px;line-height:1.6;overflow-wrap:anywhere}
+.task-progress progress{display:block;width:100%;height:12px;margin:8px 0;accent-color:#a9b9ff}
+.task-progress small{display:block;color:#aeb9c8;line-height:1.6;overflow-wrap:anywhere}
+.task-progress[data-state=error],.task-progress[data-state=partial]{border-color:#c39e68}
+.task-progress[data-state=complete]{border-color:#79b59e}
+.task-progress[data-state=running] [data-progress-title]::before{content:'';display:inline-block;width:7px;height:7px;margin-right:8px;border-radius:50%;background:#a9b9ff;animation:task-pulse 1.4s ease-in-out infinite alternate}
+@keyframes task-pulse{to{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.task-progress[data-state=running] [data-progress-title]::before{animation:none}}

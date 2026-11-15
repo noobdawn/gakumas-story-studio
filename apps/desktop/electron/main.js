@@ -1,7 +1,8 @@
 'use strict';
 const runtime=require('./runtime-paths');runtime.configure();
-const {app, BrowserWindow, dialog, ipcMain, Menu, shell} = require('electron');
+const {app, BrowserWindow, dialog, ipcMain, Menu, shell, screen} = require('electron');
 const {spawn} = require('node:child_process');
+const windowLayout=require('./window-layout');
 const writeGuard = require('./write-guard').create(pathForLibrary());
 const library = require('./media-library').create(pathForLibrary(),{assertWritable:writeGuard.assertWritable,prepareVisual:require('./visual-media').prepare,onProgress:info=>{if(win&&!win.isDestroyed())win.webContents.send('assets:import-progress',info);}});
 const voices = require('./voice-library').create({dataRoot:pathForLibrary(),assertWritable:writeGuard.assertWritable});
@@ -226,7 +227,7 @@ ipcMain.handle('setup:data',async event=>{checkSender(event);if(!setupMode)throw
 
 async function openAssetSetup(reason){
   setupMode=true;setupReason=reason;rendererReady=false;
-  if(!win)win=new BrowserWindow({width:1000,height:850,minWidth:800,minHeight:600,title:'演出工作台 · 资产准备',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(__dirname,'preload.js')}});
+  if(!win){win=new BrowserWindow({...windowLayout.options(screen,'setup'),title:'演出工作台 · 资产准备',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(__dirname,'preload.js')}});windowLayout.watch(win,screen);}
   win.setMenu(null);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   const file=path.join(runtime.ui,'asset-setup.html');sessionUrl=require('node:url').pathToFileURL(file).toString();
   win.webContents.on('will-navigate',(event,url)=>{if(url!==sessionUrl)event.preventDefault();});
@@ -245,9 +246,10 @@ async function start() {
   const player = playerArg >= 0 && process.argv[playerArg+1] ? path.resolve(process.argv[playerArg+1]) : null;
   const bundles=path.join(visual.view,'characters');previewCatalog=visual.catalog;
   previewBundles=bundles;previewPlayer=player||runtime.player;
-  win = new BrowserWindow({width:1440,height:900,minWidth:900,minHeight:650,autoHideMenuBar:false,
+  win = new BrowserWindow({...windowLayout.options(screen,'editor'),autoHideMenuBar:false,
     title:'演出工作台 · Electron 原型', backgroundColor:'#202226', show:process.env.CREATOR_CONTROL_HIDDEN!=='1',
     webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false,preload:path.join(__dirname,'preload.js')}});
+  windowLayout.watch(win,screen);
   const command = name => {if(win && !win.isDestroyed() && rendererReady)win.webContents.send('app:menu',name);};
   win.setMenu(Menu.buildFromTemplate([
     {label:'文件',submenu:[{label:'新建工程',accelerator:'CmdOrCtrl+N',click:()=>command('new')},{label:'打开工程…',accelerator:'CmdOrCtrl+O',click:()=>command('open')},{type:'separator'},{label:'保存工程',accelerator:'CmdOrCtrl+S',click:()=>command('save')},{label:'工程另存为…',accelerator:'CmdOrCtrl+Shift+S',click:()=>command('save-as')},{type:'separator'},{label:'导出视频…',click:()=>command('export-video')},{type:'separator'},{label:'退出',click:()=>win.close()}]},

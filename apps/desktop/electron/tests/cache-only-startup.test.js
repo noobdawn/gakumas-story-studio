@@ -16,7 +16,8 @@ async function start(mode){
  const electron={app,BrowserWindow:Window,Menu:{buildFromTemplate:x=>x},ipcMain:{handle:(n,f)=>handlers.set(n,f),on(){}},dialog:{showErrorBox:(title,message)=>{throw Error(title+': '+message);}},safeStorage:{}};
  const fakeRequire=name=>{
   if(name==='electron')return electron;
-  if(name==='./runtime-paths')return {...require('../runtime-paths'),configure(){}};
+  if(name==='./runtime-paths')return {...require('../runtime-paths'),data:()=>path.resolve('fixture/user-data'),configure(){}};
+  if(name==='./window-layout')return {options:()=>({width:1000,height:780}),watch(){}};
   if(name==='./bundled-resources')return {install:async()=>{}};
   if(name==='./setup-wizard')return {create:()=>({read:async()=>({completed:mode!=='onboarding'}),busy:()=>false,cancel(){}})};
   if(name==='node:fs')return {...fs,mkdtempSync:()=>path.resolve('fixture/profile'),existsSync:()=>false};

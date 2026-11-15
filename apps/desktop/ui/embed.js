@@ -29,7 +29,10 @@
   }
   function layout() {
     const r = viewport.getBoundingClientRect(), d = window.devicePixelRatio || 1;
-    const blocked=document.body.classList.contains('dock-dragging')||[...document.querySelectorAll('.dock-floating')].some(el=>{const b=el.getBoundingClientRect();return b.left<r.right&&b.right>r.left&&b.top<r.bottom&&b.bottom>r.top;});
+    const workspace=document.querySelector('.workspace').getBoundingClientRect();
+    const clipped=r.left<workspace.left-1||r.right>workspace.right+1||r.top<workspace.top-1||r.bottom>workspace.bottom+1;
+    const blocked=clipped||document.body.classList.contains('dock-dragging')||[...document.querySelectorAll('.dock-floating')].some(el=>{const b=el.getBoundingClientRect();return b.left<r.right&&b.right>r.left&&b.top<r.bottom&&b.bottom>r.top;});
+    dockNotice.textContent=clipped?'请滚动工作区或扩大窗口以显示完整预览':'浮动面板遮住预览，移开面板或停靠后恢复';
     dockNotice.classList.toggle('hidden',!blocked);
     const x = Math.round(r.left*d), y = Math.round(r.top*d);
     const bounds = {x, y, width:Math.max(1,Math.round(r.right*d)-x), height:Math.max(1,Math.round(r.bottom*d)-y),
@@ -42,6 +45,9 @@
   async function refreshMetrics(){if(!window.projectAPI?.windowMetrics)return;const request=++metricRequest;try{const m=await window.projectAPI.windowMetrics();if(request!==metricRequest)return;inset={x:m.contentBounds.x-m.bounds.x,y:m.contentBounds.y-m.bounds.y};layout();}catch(_){}}
   window.addEventListener('resize',()=>{layout();refreshMetrics();});
   window.addEventListener('creator-layout-change',layout);
+  document.querySelector('.workspace').addEventListener('scroll',layout);
+  function watchDpi(){const query=matchMedia(`(resolution: ${devicePixelRatio}dppx)`);query.addEventListener('change',()=>{layout();refreshMetrics();watchDpi();},{once:true});}
+  watchDpi();
   document.addEventListener('visibilitychange',layout);
   layout();
   refreshMetrics();

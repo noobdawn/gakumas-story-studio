@@ -1,5 +1,5 @@
 """Read-only source/contract checks, safe without game data or Unity."""
-import ast, hashlib, json, subprocess, sys
+import ast, hashlib, json, re, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def main():
@@ -18,5 +18,10 @@ def main():
             for item in data['assets']:
                 p=ROOT/'resources/common'/item['file']
                 assert hashlib.sha256(p.read_bytes()).hexdigest()==item['sha256']
-    print('Syntax and resource manifest checks passed')
+    host=ast.parse((ROOT/'services/host/host.py').read_text('utf-8-sig'))
+    allowed=next(set(ast.literal_eval(n.comparators[0])) for n in ast.walk(host) if isinstance(n,ast.Compare) and isinstance(n.left,ast.Name) and n.left.id=='name' and isinstance(n.ops[0],ast.NotIn) and isinstance(n.comparators[0],ast.Tuple) and 'index.html' in ast.literal_eval(n.comparators[0]))
+    linked=set(re.findall(r'(?:src|href)="\./([^"#]+)"',(ROOT/'apps/desktop/ui/index.html').read_text('utf-8')))
+    assert linked<=allowed, 'Host must serve linked UI files: '+str(linked-allowed)
+    assert all((ROOT/'apps/desktop/ui'/name).is_file() for name in linked-{'classroom-props.js'})
+    print('Syntax, UI route and resource manifest checks passed')
 if __name__=='__main__':main()

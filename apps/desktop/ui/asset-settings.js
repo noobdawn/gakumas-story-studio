@@ -20,23 +20,26 @@
       <h3 id="asset-operation-heading">操作</h3>
       <p class="hint">清理与解包只处理缓存，保留工程、导入音频、生成配音和用户设置。</p>
       <div class="asset-operation-actions"><button id="asset-cache-clear">清除缓存</button><button id="asset-cache-start" class="asset-primary-action">重新解包</button></div>
+      ${window.CreatorTaskProgress.html("asset-progress","游戏资源解包进度")}
       <div class="asset-operation-status"><p id="asset-settings-status" role="status"></p><p class="hint" id="asset-visual-status"></p><p class="hint" id="asset-cleanup-status" hidden></p></div>
       <details id="asset-result-details" hidden><summary>解包结果与缺失明细</summary><p class="hint" id="asset-partial-status"></p><pre></pre></details>
       <p class="error" id="asset-settings-error" role="alert" hidden></p>
     </section>
   </section>`;
-  function bind({api,refreshCatalog}) {
+  function bind({api,refreshCatalog,wizard=false}) {
     const page=document.querySelector('#asset-settings-page');if(!page)return;
     const $=selector=>page.querySelector(selector),status=$('#asset-settings-status'),error=$('#asset-settings-error');
     const game=$('#asset-game-choose'),cache=$('#asset-cache-choose'),clear=$('#asset-cache-clear'),start=$('#asset-cache-start'),refresh=$('#asset-cache-refresh'),details=$('#asset-result-details');
     const buttons=[game,cache,clear,start,refresh];
+    if(wizard){page.classList.add('asset-wizard');const extra=document.createElement('details'),summary=document.createElement('summary');summary.textContent='目录与缓存详情';extra.append(summary,...[...page.querySelectorAll(':scope>.asset-settings-block')].slice(0,2));page.append(extra);}
+
     if(!api?.settingsInfo){status.textContent='当前会话不支持资产设置';buttons.forEach(b=>b.disabled=true);return;}
     const colors=['#79b6d8','#86c6b0','#c4a2d8','#d9b879','#dc929b','#8f9cab'];
     const sizes=n=>{n=Math.max(0,Number(n)||0);if(!n)return '0 B';const i=Math.min(3,Math.floor(Math.log(n)/Math.log(1024)));return (n/1024**i).toFixed(i?2:0)+' '+['B','KiB','MiB','GiB'][i];};
     const date=v=>v&&!Number.isNaN(Date.parse(v))?new Date(v).toLocaleString('zh-CN',{hour12:false}):'尚无成功更新';
     const percent=v=>v>0&&v<0.1?'< 0.1%':v.toFixed(1)+'%';
     let waiting=false,scanning=false,polling=false,timer=null,lastState='',lastInfo=null,notice='',reviewedRun=null;
-    function controls(){const running=lastInfo?.job?.state==='running';game.disabled=cache.disabled=clear.disabled=waiting||scanning||running;start.disabled=waiting||scanning;start.textContent=running?'停止解包':'重新解包';refresh.disabled=waiting||scanning||running;}
+    function controls(){const running=lastInfo?.job?.state==='running';game.disabled=cache.disabled=clear.disabled=waiting||scanning||running;start.disabled=waiting||scanning;start.textContent=running?'停止解包':wizard&&!lastInfo?.visualNext?'开始解包':'重新解包';refresh.disabled=waiting||scanning||running;}
     function failure(message){error.textContent=message||'';error.hidden=!message;}
     async function stats(){
       if(!page.isConnected||scanning)return;scanning=true;controls();
@@ -55,9 +58,9 @@
       }catch(e){if(page.isConnected)failure('统计失败：'+e.message);}finally{scanning=false;if(page.isConnected)controls();}
     }
     function render(info){
-      lastInfo=info;$('#asset-game-path').textContent=info.game?.path||'尚未选择';$('#asset-game-state').textContent=info.game?.state==='valid'?'目录已验证 · 游戏文件只读':info.game?.message||'请先选择游戏安装目录';
+      lastInfo=info;window.CreatorTaskProgress.render($('#asset-progress'),info.job,'assets');page.dispatchEvent(new CustomEvent('asset-job-change',{bubbles:true,detail:{running:info.job?.state==='running'}}));$('#asset-game-path').textContent=info.game?.path||'尚未选择';$('#asset-game-state').textContent=info.game?.state==='valid'?'目录已验证 · 游戏文件只读':info.game?.message||'请先选择游戏安装目录';
       $('#asset-cache-path').textContent=info.root||'尚未选择';$('#asset-cache-managed').textContent=info.managedPath||'';$('#asset-cache-updated').textContent=date(info.lastUpdated);
-      const running=info.job?.state==='running';status.textContent=[running?null:notice,info.job?.phase,info.job?.message,info.warning].filter(Boolean).join(' · ')||'可以重新解包，准备本地游戏资源。';status.classList.toggle('is-running',running);
+      const running=info.job?.state==='running';status.textContent=[running?null:notice,info.warning].filter(Boolean).join(' · ')||'可以重新解包，准备本地游戏资源。';status.classList.toggle('is-running',running);
       $('#asset-visual-status').textContent=info.visualNext?(info.visualUpdatePending||!info.visualActive?'新 Player 资源已准备，重启工作台后生效。':'Player 缓存已就绪。'):(info.visualActive?'当前 Player 继续使用已加载的资源；重新解包后重启工作台生效。':'尚无可用 Player 缓存，请重新解包。');
       $('#asset-cleanup-status').hidden=!info.pendingCleanup;$('#asset-cleanup-status').textContent=info.pendingCleanup?`${info.pendingCleanup} 个使用中的旧批次将在工作台正常退出后清理。清理前仍占用磁盘空间。`:'';
       details.hidden=!(info.issueItems?.length||info.partialAudioPending);$('#asset-partial-status').textContent=info.partialAudioPending?'本批次有成功解码的音频待确认；展开此项可选择是否使用。':'';
