@@ -1,0 +1,108 @@
+(function(root){'use strict';
+ root.CreatorAnimationLayerUI=function(e){
+  const $=s=>document.querySelector(s),esc=e.esc,L=CreatorAnimationLayers;
+  const labels={animation:'动画',expression:'表情',decal:'贴花 / 特效',gaze:'注视'},scopes={full:'全身',head:'头颈',upperBody:'上半身',lowerBody:'下半身',leftArm:'左臂和手',rightArm:'右臂和手'};
+  const options=(items,value)=>Object.entries(items).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('');
+  function change(fn){const before=structuredClone(e.state());fn();e.remember(before);e.render();}
+  function addTrack(actor,type){
+   const s=e.state(),tracks=s.tracks.filter(t=>t.target===actor.id&&t.type===type),t={id:e.id(),target:actor.id,type,layerRole:'overlay',name:actor.name+' · '+(type==='animation'?'动画叠加 ':'表情叠加 ')+(tracks.filter(t=>t.layerRole==='overlay').length+1),clips:[]};
+   s.tracks.push(t);if(!actor.components.includes(type))actor.components.push(type);return t;
+  }
+  function trackFor(actor,type,start,len,preferred,forceOverlay=false){
+   const free=t=>t&&!t.locked&&t.enabled!==false&&!t.clips.some(c=>start<c.start+c.len-1e-6&&start+len>c.start+1e-6);
+   if(free(preferred)&&(!forceOverlay||preferred.layerRole==='overlay'))return preferred;
+   const s=e.state();return s.tracks.find(t=>t.target===actor.id&&t.type===type&&t.layerRole==='overlay'&&free(t))||addTrack(actor,type);
+  }
+  async function addClip(actor,assetId,start,preferred,settings={}){
+   const s=e.state(),def=e.motion(assetId),face=e.face(assetId),shape=e.shape(assetId),type=def?'animation':'expression';
+   if(!actor||(!def&&!face&&!shape))throw Error('角色或素材不可用');
+   if(preferred?.locked)throw Error('目标轨道已锁定');
+   if(face)await e.prepare(actor,assetId,start);
+   if(settings.stillWanted&&!settings.stillWanted())throw Error('操作已取消或演出设置已改变，请重新添加');
+   if(e.state()!==s||!s.objects.includes(actor)||preferred&&!s.tracks.includes(preferred))throw Error('工程或轨道已改变，请重新添加');
+   if(shape&&!e.supports(actor,shape.source))throw Error('此角色缺少该形变或特效');
+   if(face&&!face.channels.some(c=>e.supports(actor,c.shape)))throw Error('此角色没有可用的表情通道');
+   const raw=settings.length??(def?.isPose||face&&face.length<=1.01/e.fps()?3:def?.length||face?.length||3),len=Math.min(Math.ceil((raw-.000001)*e.fps())/e.fps(),e.duration()-start);
+   if(len<1/e.fps())throw Error('演出剩余时长不足');
+   const before=structuredClone(s),track=trackFor(actor,type,start,len,preferred,!!def?.isAdditive);
+   const clip={id:e.id(),name:e.name(assetId),assetId,start,len,weight:100,fadeIn:0,fadeOut:0};
+   if(def){clip.layerPlayback=true;clip.loop=!!def.isLoop;if(track.layerRole==='overlay'){clip.blendMode=def.isAdditive?'additive':'override';clip.scope=def.defaultScope||'full';if(def.isAdditive){clip.fadeIn=Math.min(.15,len/4);clip.fadeOut=Math.min(.15,len/4);}}}
+   if(face)clip.playback='hold';track.clips.push(clip);e.selectClip(clip.id);if(settings.commit!==false){e.remember(before);e.render();}
+   return {clips:[clip.id],length:len,skipped:face?face.channels.filter(c=>!e.supports(actor,c.shape)).length:0,trackId:track.id};
+  }
+  function openExpressionPicker(actor,preferred){
+   const initial=e.state(),start=initial.current,initialFps=e.fps(),initialDuration=e.duration();
+   e.showModal(`<div class="modal-head"><div><h2>添加表情片段</h2><p>${esc(actor.name)} · 从 ${start.toFixed(2)} 秒开始</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">选择素材后插入时间轴；片段结束后恢复常驻表情。常驻表情在角色属性中设置。</p><div class="field"><label for="expression-picker-search">搜索表情</label><input id="expression-picker-search" class="input" placeholder="例如：娇羞、微笑、原始资源名"><label for="expression-picker-kind">素材类型</label><select id="expression-picker-kind"><option value="face">完整表情</option><option value="shape">单项形变</option><option value="effect">贴花 / 特效</option></select></div><div id="expression-picker-list" class="expression-picker-list" aria-label="可选表情"></div><p id="expression-picker-count" class="hint"></p><p id="expression-picker-error" class="error" role="alert"></p><button id="expression-picker-resident" class="add-component">查看常驻表情设置</button></div>`);
+   const modal=$('#modal'),list=$('#expression-picker-list'),search=$('#expression-picker-search'),kind=$('#expression-picker-kind');let busy=false;
+   function draw(){
+    const terms=search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean),mode=kind.value;
+    const candidates=e.assets().filter(a=>{const face=e.face(a.id),shape=e.shape(a.id);return mode==='face'?!!face:!!shape&&e.supports(actor,shape.source)&&(mode==='shape'?shape.source.startsWith('b_'):!shape.source.startsWith('b_'));});
+    const matches=candidates.filter(a=>terms.every(term=>(e.name(a.id)+' '+a.source).toLocaleLowerCase().includes(term)));
+    matches.sort((a,b)=>Number(e.name(b.id).includes(actor.name))-Number(e.name(a.id).includes(actor.name)));
+    list.innerHTML=matches.slice(0,100).map(a=>`<button class="costume-picker-row" data-expression-pick="${esc(a.id)}"><span>${esc(e.name(a.id))}<small>${esc(a.source)}</small></span><small>${e.face(a.id)?e.face(a.id).length<=1.01/e.fps()?'静态表情':e.face(a.id).length.toFixed(2)+' 秒':'权重控制'}</small></button>`).join('')||`<p class="hint">${candidates.length?'没有匹配的表情，请更换搜索词。':'此类型暂无可用素材，请检查资源缓存是否已准备。'}</p>`;
+    $('#expression-picker-count').textContent=`匹配 ${matches.length} 项${matches.length>100?'，显示前 100 项，请继续搜索':''}`;
+   }
+   search.oninput=draw;kind.onchange=draw;
+   $('#expression-picker-resident').onclick=()=>{if(busy)return;e.closeModal();e.manageResident(actor);};
+   list.onclick=async event=>{
+    const button=event.target.closest('[data-expression-pick]');if(!button||busy)return;busy=true;
+    modal.querySelectorAll('button:not([data-close]),input,select').forEach(x=>x.disabled=true);
+    const valid=()=>initial===e.state()&&initial.objects.includes(actor)&&$('#expression-picker-list')===list&&!$('#overlay').classList.contains('hidden')&&e.fps()===initialFps&&e.duration()===initialDuration;
+    try{
+     if(!valid())throw Error('工程或演出设置已改变，请重新选择表情');
+     const base=preferred||initial.tracks.find(t=>t.target===actor.id&&t.type==='expression'&&t.layerRole==='base');
+     const result=await addClip(actor,button.dataset.expressionPick,start,base,{stillWanted:valid});
+     e.closeModal();e.revealClip(result.clips[0]);e.notify('已添加表情片段'+(result.skipped?'；跳过 '+result.skipped+' 个此角色不支持的通道':''));
+    }catch(error){if($('#expression-picker-list')===list)$('#expression-picker-error').textContent=error.message;}
+    finally{busy=false;if($('#expression-picker-list')===list)modal.querySelectorAll('button,input,select').forEach(x=>x.disabled=false);}
+   };
+   draw();search.focus();
+  }
+  function residentMarkup(actor){
+   return `<div class="inspector-section resident-section"><div class="section-title">常驻叠加 <button id="resident-add" class="tool-button">＋ 添加</button></div><p class="hint">按列表顺序生效；时间轴表情临时覆盖相同通道，片段结束后恢复。注视尚未实现。</p><div class="resident-list">${(actor.residentLayers||[]).map((x,i)=>`<div class="resident-item ${x.enabled?'':'resident-muted'}"><label><input type="checkbox" data-resident-enable="${esc(x.id)}" ${x.enabled?'checked':''} ${x.kind==='gaze'?'disabled':''}><span><b>${esc(x.kind==='gaze'?'注视玩家（预留）':e.name(x.assetId))}</b><small>${labels[x.kind]} · ${x.kind==='gaze'?'未实现':x.weight+'%'+(x.kind==='animation'?' · '+scopes[x.scope]:'')}</small></span></label><div class="resident-actions"><button data-resident-edit="${esc(x.id)}">设置</button><button data-resident-move="${esc(x.id)}" data-step="-1" ${i?'':'disabled'} title="上移">↑</button><button data-resident-move="${esc(x.id)}" data-step="1" ${i<actor.residentLayers.length-1?'':'disabled'} title="下移">↓</button><button data-resident-remove="${esc(x.id)}" title="移除">×</button></div></div>`).join('')||'<p class="hint">尚无常驻叠加。</p>'}</div><label class="dialogue-link"><input id="inherit-body-face" type="checkbox" ${actor.inheritBodyFace?'checked':''}> 继承身体动作配套表情</label><p class="hint">配套表情作为底层，常驻表情与时间轴可继续覆盖；旧工程默认关闭。</p></div>`;
+  }
+  function bindResident(actor){
+   $('#resident-add').onclick=()=>editResident(actor);
+   $('#inherit-body-face').onchange=ev=>change(()=>actor.inheritBodyFace=ev.target.checked);
+   document.querySelectorAll('[data-resident-enable]').forEach(b=>b.onchange=()=>change(()=>actor.residentLayers.find(x=>x.id===b.dataset.residentEnable).enabled=b.checked));
+   document.querySelectorAll('[data-resident-remove]').forEach(b=>b.onclick=()=>change(()=>actor.residentLayers=actor.residentLayers.filter(x=>x.id!==b.dataset.residentRemove)));
+   document.querySelectorAll('[data-resident-edit]').forEach(b=>b.onclick=()=>editResident(actor,actor.residentLayers.find(x=>x.id===b.dataset.residentEdit)));
+   document.querySelectorAll('[data-resident-move]').forEach(b=>b.onclick=()=>change(()=>{const list=actor.residentLayers,i=list.findIndex(x=>x.id===b.dataset.residentMove),j=i+Number(b.dataset.step);if(j>=0&&j<list.length)[list[i],list[j]]=[list[j],list[i]];}));
+  }
+  function bodyFields(value,prefix){return `<div class="field"><label>混合方式</label><select id="${prefix}-blend">${options({additive:'原生增量叠加',override:'按部位覆盖'},value.blendMode||'override')}</select></div><div class="field"><label>作用范围</label><select id="${prefix}-scope">${options(scopes,value.scope||'full')}</select></div><label class="dialogue-link"><input id="${prefix}-loop" type="checkbox" ${value.loop?'checked':''}> 循环播放</label><p class="hint">原生增量仅用于游戏明确标记的叠加动作。普通动作可按部位覆盖；下方层优先，道具约束与 IK 尚未接入。</p>`;}
+  function editResident(actor,current){
+   const draft=current?structuredClone(current):{id:e.id(),kind:'animation',enabled:true,weight:100,assetId:'',blendMode:'additive',scope:'full',loop:true,condition:'always',playback:'hold'};
+   e.showModal(`<div class="modal-head"><div><h2>${current?'设置':'添加'}常驻叠加</h2><p>${esc(actor.name)}</p></div><button data-close class="icon-button">×</button></div><div class="modal-body"><div class="field"><label>内容类型</label><select id="resident-kind">${options(labels,draft.kind)}</select></div><div id="resident-editor"></div><p id="resident-error" class="error"></p><button id="resident-save" class="solid-button">保存</button></div>`);
+   function draw(){
+    const gaze=draft.kind==='gaze';
+    $('#resident-editor').innerHTML=gaze?'<p class="hint">预留注视玩家设置，当前不会改变角色眼睛或头部方向。</p>':`<div class="field"><label>素材</label><input id="resident-search" class="input" placeholder="搜索名称或原名"><select id="resident-asset" size="6"></select><p class="hint" id="resident-count"></p></div><div class="field"><label>权重（%）</label><input id="resident-weight" class="input" type="number" min="0" max="100" value="${draft.weight}"></div>${draft.kind==='animation'?bodyFields(draft,'resident')+`<div class="field"><label>生效时机</label><select id="resident-condition">${options({always:'始终生效',resident:'仅使用常驻动画时'},draft.condition||'always')}</select></div>`:`<div class="field"><label>播放方式</label><select id="resident-playback">${options({hold:'保持指定姿态',loop:'循环播放'},draft.playback||'hold')}</select></div><div class="field"><label>取样位置（秒）</label><input id="resident-offset" class="input" type="number" min="0" step="0.033333" value="${draft.sourceOffset||0}"></div><p class="hint">保持模式默认取表情末尾；可调整取样位置。形变与贴花直接使用权重。</p>`}`;
+    if(gaze)return;
+    const list=e.assets().filter(a=>draft.kind==='animation'?!!e.motion(a.id):draft.kind==='expression'?!!e.face(a.id)||!!e.shape(a.id)&&e.shape(a.id).source.startsWith('b_'):!!e.shape(a.id)&&!e.shape(a.id).source.startsWith('b_'));
+    const paint=()=>{const terms=$('#resident-search').value.toLowerCase().trim().split(/\s+/).filter(Boolean),matched=list.filter(a=>terms.every(x=>(e.name(a.id)+' '+a.source).toLowerCase().includes(x))),shown=matched.slice(0,120);const chosen=list.find(a=>a.id===draft.assetId);if(chosen&&!shown.includes(chosen))shown.unshift(chosen);$('#resident-asset').innerHTML=(!chosen&&draft.assetId?`<option value="${esc(draft.assetId)}" selected>素材缺失：${esc(draft.assetId)}</option>`:'<option value="">请选择素材</option>')+shown.map(a=>`<option value="${esc(a.id)}" ${a.id===draft.assetId?'selected':''}>${esc(e.name(a.id))}</option>`).join('');$('#resident-count').textContent=`匹配 ${matched.length} 项，最多显示 120 项；可继续搜索。`;};
+    $('#resident-search').oninput=paint;paint();
+    $('#resident-asset').onchange=ev=>{draft.assetId=ev.target.value;const d=e.motion(draft.assetId),f=e.face(draft.assetId);if(d){$('#resident-blend').value=d.isAdditive?'additive':'override';$('#resident-scope').value=d.defaultScope||'full';$('#resident-loop').checked=!!d.isLoop;}else if(f)$('#resident-offset').value=Math.max(0,f.length-.0001).toFixed(4);};
+   }
+   $('#resident-kind').onchange=ev=>{draft.kind=ev.target.value;draft.assetId='';draw();};draw();
+   $('#resident-save').onclick=async()=>{const button=$('#resident-save');button.disabled=true;try{
+    const s=e.state();let item;
+    if(draft.kind==='gaze')item={id:draft.id,kind:'gaze',enabled:false,weight:100,targetType:'camera',gazeScope:'eyes'};
+    else {
+     item={id:draft.id,kind:draft.kind,enabled:current?.enabled??true,weight:Number($('#resident-weight').value),assetId:$('#resident-asset').value};
+     if(draft.kind==='animation'){Object.assign(item,{blendMode:$('#resident-blend').value,scope:$('#resident-scope').value,loop:$('#resident-loop').checked,condition:$('#resident-condition').value});const d=e.motion(item.assetId);if(!d||item.blendMode==='additive'&&!d.isAdditive)throw Error('所选动作不是原生增量动画，请改为按部位覆盖');}
+     else{Object.assign(item,{playback:$('#resident-playback').value,sourceOffset:Number($('#resident-offset').value)});const face=e.face(item.assetId);if(face){if(item.sourceOffset>face.length)throw Error('取样位置超出表情时长');await e.prepare(actor,item.assetId,0);}else if(!e.shape(item.assetId)||!e.supports(actor,e.shape(item.assetId).source))throw Error('此角色缺少该形变或特效');}
+    }
+    if(!L.validateResident(item))throw Error('请检查素材、权重和取样位置');
+    if(e.state()!==s||!s.objects.includes(actor))throw Error('工程或角色已改变');
+    if(!current&&actor.residentLayers.length>=32)throw Error('每个角色最多设置 32 项常驻叠加');
+    const before=structuredClone(s);if(current){const index=actor.residentLayers.indexOf(current);if(index<0)throw Error('常驻设置已改变');actor.residentLayers[index]=item;}else actor.residentLayers.push(item);e.remember(before);e.closeModal();e.render();
+   }catch(err){const out=$('#resident-error');if(out)out.textContent=err.message;}finally{if(button.isConnected)button.disabled=false;}};
+  }
+  function clipFields(track,clip){
+   if(track.type==='animation')return (track.layerRole==='overlay'?`<div class="layer-clip-fields"><div class="field"><label>叠加权重（%）</label><input id="layer-weight" class="input" type="number" min="0" max="100" value="${clip.weight??100}"></div>${bodyFields(clip,'layer')}</div>`:`<label class="dialogue-link"><input id="layer-loop" type="checkbox" ${clip.loop?'checked':''}> 在片段范围内循环</label><p class="hint">姿势保持至片段结束；片段空白处使用常驻动画。</p>`);
+   if(track.type==='expression'&&e.face(clip.assetId))return `<div class="field"><label>表情播放方式</label><select id="layer-playback">${options({hold:'播放后保持末帧',loop:'在片段范围内循环'},clip.playback||'hold')}</select></div><p class="hint">整套面部曲线保存在一个片段中；说话口型只临时接管嘴部。</p>`;
+   return '';
+  }
+  function bindClip(track,clip){for(const [key,field] of [['weight','weight'],['blend','blendMode'],['scope','scope'],['loop','loop'],['playback','playback']]){const input=$('#layer-'+key);if(!input)continue;input.disabled=!!track.locked;input.onchange=()=>{try{const value=key==='loop'?input.checked:key==='weight'?Number(input.value):input.value;if(key==='weight'&&(!Number.isFinite(value)||value<0||value>100))throw Error('权重须在 0–100 之间');if(key==='blend'&&value==='additive'&&!e.motion(clip.assetId)?.isAdditive)throw Error('此动作没有原生增量数据');change(()=>clip[field]=value);}catch(err){e.notify(err.message);e.render();}};}}
+  return {residentMarkup,bindResident,clipFields,bindClip,addTrack,trackFor,addClip,openExpressionPicker};
+ };
+})(globalThis);

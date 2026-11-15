@@ -1,0 +1,18 @@
+{
+  "id": "f40f1898-aa6d-4bc7-ad9d-789a9d805a22",
+  "type": "贴图",
+  "alias": "制作人-惊慌",
+  "source": "惊慌.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "dad95a20a63732ca81f23b5f2416cf65b76f8d97f27c6840d6545d3cd868a67b",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

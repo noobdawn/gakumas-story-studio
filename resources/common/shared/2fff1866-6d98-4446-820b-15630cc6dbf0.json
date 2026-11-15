@@ -1,0 +1,18 @@
+{
+  "id": "2fff1866-6d98-4446-820b-15630cc6dbf0",
+  "type": "贴图",
+  "alias": "制作人-羞涩",
+  "source": "羞涩.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "cbc198c30d17206428bcd9e26b6668bc38308143a1bb011d20ea47e76c254ea7",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

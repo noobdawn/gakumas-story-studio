@@ -1,0 +1,7 @@
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.CreatorLayoutSchema=factory();})(typeof globalThis!=='undefined'?globalThis:this,function(){
+ 'use strict';
+ const IDS=['hierarchy','preview','timeline','assets','inspector','project'];
+ function valid(layout){if(!layout||layout.version!==1||!layout.root)return false;const seen=new Set();function node(n,depth){if(!n||typeof n!=='object'||Array.isArray(n)||depth>5)return false;if(n.type==='group'){if(!Array.isArray(n.tabs)||!n.tabs.length||n.tabs.length>IDS.length||!n.tabs.includes(n.active))return false;for(const id of n.tabs){if(!IDS.includes(id)||seen.has(id))return false;seen.add(id);}return true;}if(n.type==='split')return ['horizontal','vertical'].includes(n.direction)&&typeof n.ratio==='number'&&Number.isFinite(n.ratio)&&n.ratio>=.08&&n.ratio<=.92&&node(n.first,depth+1)&&node(n.second,depth+1);return false;}return node(layout.root,0)&&(seen.size===IDS.length||(seen.size===IDS.length-1&&!seen.has('project')));}
+ function normalize(layout){if(!valid(layout))throw Error('工程界面布局无效');const copy=JSON.parse(JSON.stringify(layout));function strip(n){if(n.type==='group'){n.tabs=n.tabs.filter(id=>id!=='project');if(!n.tabs.length)return null;if(!n.tabs.includes(n.active))n.active=n.tabs[0];return n;}n.first=strip(n.first);n.second=strip(n.second);return !n.first?n.second:!n.second?n.first:n;}copy.root=strip(copy.root);return copy;}
+ return {valid,normalize};
+});

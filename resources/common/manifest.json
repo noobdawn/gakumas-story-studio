@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "revision": "2026.11.15.1",
+  "assets": [
+    {
+      "id": "0c3a1a22-e713-47ea-a997-dcfc14eb245f",
+      "name": "制作人-抱臂",
+      "file": "shared/0c3a1a22-e713-47ea-a997-dcfc14eb245f.png",
+      "sha256": "5643fe7f53b02e16f6e0dd902b225725a78abbe89b357f78341d6d6457816393",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "11d6a146-9bfd-4b3f-bfdd-fc4b3df31dc6",
+      "name": "制作人-站立",
+      "file": "shared/11d6a146-9bfd-4b3f-bfdd-fc4b3df31dc6.png",
+      "sha256": "4326f21c665531294fe6a22bd2a88933bf105e4fa0b3568d8a7f1c1209e4d61e",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "2fff1866-6d98-4446-820b-15630cc6dbf0",
+      "name": "制作人-羞涩",
+      "file": "shared/2fff1866-6d98-4446-820b-15630cc6dbf0.png",
+      "sha256": "cbc198c30d17206428bcd9e26b6668bc38308143a1bb011d20ea47e76c254ea7",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "51bcf27e-994e-4aca-a16e-ed500791a77e",
+      "name": "制作人-思考",
+      "file": "shared/51bcf27e-994e-4aca-a16e-ed500791a77e.png",
+      "sha256": "feb91af2f023eea4f22114f566af26897dabe3ed15887cd5124303c2dc5a61e5",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "5b8a6ef3-679e-4380-b1f4-832464cefb53",
+      "name": "制作人-摆手",
+      "file": "shared/5b8a6ef3-679e-4380-b1f4-832464cefb53.png",
+      "sha256": "01958d653f979c056dca120a94510628137bbc5921a46df0f4b761daeae255e2",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "7f437e59-12e4-4fb7-88c5-e764d6942408",
+      "name": "制作人-通话",
+      "file": "shared/7f437e59-12e4-4fb7-88c5-e764d6942408.png",
+      "sha256": "1569b62e99ff1cb4fb87ea87a56961cf8012474fcc86e0dc8c2ba466cc8c8c72",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "b25a0db1-62d6-43ca-a16b-2efc342b4560",
+      "name": "制作人-扶额",
+      "file": "shared/b25a0db1-62d6-43ca-a16b-2efc342b4560.png",
+      "sha256": "d9130f3587ce06a5b5f11ab57b2f78280fcd509a12c1703611ad2b29186ab8f0",
+      "attributionStatus": "pending-user-source"
+    },
+    {
+      "id": "f40f1898-aa6d-4bc7-ad9d-789a9d805a22",
+      "name": "制作人-惊慌",
+      "file": "shared/f40f1898-aa6d-4bc7-ad9d-789a9d805a22.png",
+      "sha256": "dad95a20a63732ca81f23b5f2416cf65b76f8d97f27c6840d6545d3cd868a67b",
+      "attributionStatus": "pending-user-source"
+    }
+  ],
+  "attribution": {
+    "author": "Pドキドキ文芸科",
+    "source": "YouTube videos, user-provided attribution",
+    "sourceUrl": null,
+    "redistributionStatus": "unconfirmed"
+  }
+}

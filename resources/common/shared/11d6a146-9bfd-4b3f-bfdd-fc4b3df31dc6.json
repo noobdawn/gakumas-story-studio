@@ -1,0 +1,18 @@
+{
+  "id": "11d6a146-9bfd-4b3f-bfdd-fc4b3df31dc6",
+  "type": "贴图",
+  "alias": "制作人-站立",
+  "source": "站立.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "4326f21c665531294fe6a22bd2a88933bf105e4fa0b3568d8a7f1c1209e4d61e",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

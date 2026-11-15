@@ -1,0 +1,18 @@
+{
+  "id": "b25a0db1-62d6-43ca-a16b-2efc342b4560",
+  "type": "贴图",
+  "alias": "制作人-扶额",
+  "source": "扶额.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "d9130f3587ce06a5b5f11ab57b2f78280fcd509a12c1703611ad2b29186ab8f0",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

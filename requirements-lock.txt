@@ -1,0 +1,23 @@
+# Validated Windows x64 / CPython 3.14 dependency set.
+UnityPy==1.25.4
+annotated-types==0.8.0
+archspec==0.2.7
+astc-encoder-py==0.1.12
+attrs==26.1.0
+brotli==1.2.1
+cffi==2.1.1
+cryptography==46.0.3
+etcpak==0.9.15
+fmod_toolkit==0.1.3
+fsspec==2026.9.0
+lz4==4.4.5
+numpy==2.3.4
+pillow==13.0.0
+pycparser==3.12
+pydantic==2.12.3
+pydantic_core==2.41.4
+pyfmodex==0.7.2
+texture2ddecoder==1.0.6
+tpk_ar==0.2.4
+typing-inspection==0.4.5
+typing_extensions==4.16.0

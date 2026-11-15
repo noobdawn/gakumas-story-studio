@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>演出工作台 · Unity 连接原型</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./desktop.css">
+</head>
+<body>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg"><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol><symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol><symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zM4 7.5 12 12l8-4.5M12 12v9"/></symbol><symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.5-4 3-6 7-6s6.5 2 7 6"/></symbol><symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="6" width="14" height="12" rx="2"/><path d="m17 10 4-2v8l-4-2"/></symbol><symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l10-2v13M9 8l10-2"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></symbol><symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></symbol><symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol><symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-7l-5 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M7 9h10M7 13h7"/></symbol><symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></symbol><symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol><symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol><symbol id="i-back" viewBox="0 0 24 24"><path d="M5 5v14M19 6l-10 6 10 6z"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4zM7 4v6h9V4M7 20v-7h10v7"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol><symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM16 9c2 2 2 4 0 6M19 6c4 4 4 8 0 12"/></symbol><symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol><symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol><symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol></svg>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg"><symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol><symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="8" cy="9" r="2"/><path d="m4 17 5-5 3 3 3-3 5 5"/></symbol></svg>
+<header class="topbar">
+  <div class="brand"><div class="brand-mark">✳</div><span>演出工作台</span><span class="brand-beta">DEMO</span></div>
+  <div class="top-divider"></div><div class="project-label"><span class="project-small">当前工程</span><strong id="project-name">未命名原型工程</strong></div>
+  <div hidden><button id="new-project">新建</button><button id="open-project">打开</button><button id="save-project">保存</button><button id="export-project"><span id="export-label">另存为</span></button></div>
+</header>
+<div class="workspace">
+  <aside class="left-panel panel">
+    <div class="panel-heading"><div><span class="eyebrow">SCENE</span><h2>场景层级</h2></div><button class="icon-button" id="add-object" title="添加演示对象"><svg><use href="#i-plus"/></svg></button></div>
+    <div class="search-box"><svg><use href="#i-search"/></svg><input id="hierarchy-search" placeholder="搜索场景对象" aria-label="搜索场景对象"><span>⌕</span></div>
+    <div class="tree-label">当前场景 <span>01</span></div><div id="hierarchy" class="hierarchy"></div>
+    <div class="left-bottom"><button class="asset-manage" id="open-assets"><svg><use href="#i-box"/></svg><span>素材浏览器</span><span class="arrow">⌘</span></button></div>
+  </aside>
+  <main class="center">
+    <div class="preview-head"><div class="preview-title"><span class="orange-dot"></span><strong>场景预览</strong><span class="subtle-divider"></span><span id="active-preview">主相机</span><div id="gizmo-tools" class="gizmo-tools" aria-label="变换工具" hidden><button type="button" data-gizmo-mode="move" title="平移 (W)" aria-label="平移" aria-pressed="true">W 平移</button><button type="button" data-gizmo-mode="rotate" title="旋转 (R)" aria-label="旋转" aria-pressed="false">R 旋转</button><button type="button" data-gizmo-mode="scale" title="缩放 (S)" aria-label="缩放" aria-pressed="false">S 缩放</button></div></div><div class="preview-tools"><span class="live-label">独立窗口</span><span class="subtle-divider"></span><span>窗口化</span><span>独立 Player</span><svg><use href="#i-down"/></svg></div></div>
+    <section class="preview-area"><div class="viewport"><div class="viewport-grid"></div><div class="safe-frame"></div><div class="viewport-head"><span><i></i> 主相机</span><span>FOV <b id="preview-fov">35</b>°</span></div><div class="character-stage" style="padding:3em;color:#bbb">Unity 预览位于独立 Player 窗口</div><div class="viewport-bottom"><span>◈ &nbsp; <span id="preview-selection">月村手毬</span></span><span id="bridge-status">正在连接 Unity</span></div><div id="dialogue-preview" class="dialogue-preview"><span id="dialogue-speaker">月村手毬</span><p id="dialogue-text">……今天也要加油。</p></div></div></section>
+    <div id="bottom-dock" class="bottom-dock"><div class="bottom-tabs" role="tablist" aria-label="底部面板"><button id="tab-timeline" class="bottom-tab active" role="tab" aria-selected="true">时间轴</button><button id="tab-assets" class="bottom-tab" role="tab" aria-selected="false">素材浏览器</button></div>
+    <div id="timeline-panel" class="timeline-panel" tabindex="-1" aria-label="时间轴编辑区"><div class="timeline-top"><div class="edit-tools"><button class="tool-icon" id="undo" title="撤销时间轴编辑 (Ctrl+Z)" aria-label="撤销">↶</button><button class="tool-icon" id="redo" title="重做时间轴编辑 (Ctrl+Shift+Z)" aria-label="重做">↷</button><span class="subtle-divider"></span><button class="tool-icon active" id="select-mode" title="选择模式 (A)" aria-label="选择模式" aria-pressed="true">↖</button><button class="tool-icon" id="blade-mode" title="分割模式 (B)：单击切割，A 返回选择" aria-label="分割模式" aria-pressed="false">B</button><span id="timeline-tool-status" class="tool-label" role="status" aria-live="polite">选择模式</span><button class="text-button" id="group-clips" title="组合片段 (Ctrl+G)">组合</button><button class="text-button" id="ungroup-clips" title="取消组合 (Ctrl+Shift+G)">取消组合</button><button class="tool-icon" id="add-marker" title="添加／编辑标记 (M)" aria-label="添加标记">⚑</button><button class="text-button" id="timeline-help" title="时间轴操作与快捷键">快捷键</button><button class="tool-icon" id="split" title="在播放头处分割选中片段 (Ctrl+B)" aria-label="分割">✂</button><button class="tool-icon" id="delete-clip" title="删除选中片段 (Delete)" aria-label="删除片段">⌫</button><button class="tool-icon active" id="snap" title="吸附到播放头、标记和片段边缘 (N)" aria-label="吸附" aria-pressed="true">⌁</button><span class="tool-label">吸附</span><button class="text-button" id="timeline-grouping" type="button" aria-pressed="false" title="切换时间轴分类方式">分类：按类别</button><button class="text-button" id="story-manage">剧情主线</button><button class="text-button" id="select-all-dialogue" title="选择工程中全部字幕片段">全选字幕</button></div><div class="timeline-controls"><button class="icon-button" id="back-start" title="回到开头"><svg><use href="#i-back"/></svg></button><button class="play-button" id="play" aria-label="播放"><svg><use href="#i-play"/></svg></button><button class="tool-icon" id="previous-boundary" title="上一个片段边界 (↑)" aria-label="上一个片段边界">◀</button><button class="tool-icon" id="next-boundary" title="下一个片段边界 (↓)" aria-label="下一个片段边界">▶</button><button type="button" id="time-display" class="time-display timecode-button" title="输入时间码定位（时:分:秒:帧）；方向键逐帧移动" aria-label="输入时间码定位">00:00:00:00</button><span class="time-total">/ 00:00:30:00</span><span class="subtle-divider"></span><button class="tool-icon" id="zoom-out" title="缩小时间轴" aria-label="缩小时间轴">−</button><input type="range" id="zoom" min="-8" max="16" step="0.01" value="0" aria-label="时间轴缩放"><button class="tool-icon" id="zoom-in" title="放大时间轴" aria-label="放大时间轴">＋</button><button class="text-button" id="fit-timeline" title="显示全部片段 (Shift+Z)">显示全部</button><button class="text-button" id="add-track">＋ 轨道</button></div></div><div class="timeline-scroll"><div class="timeline-inner"><div class="ruler"><div class="ruler-label">轨道 <span>名称</span><span id="track-width-handle" class="track-width-handle" role="separator" aria-label="调整轨道名称宽度" aria-orientation="vertical" aria-valuenow="188" tabindex="0" title="拖动调整轨道名宽度；双击恢复默认"></span></div><div id="ruler" class="ruler-scale"></div></div><div id="story-lane" class="track-row story-row"></div><div id="tracks" class="tracks"></div><div class="track-footer"><span>＋</span> 选择对象后按 <kbd>Tab</kbd> 添加组件</div></div></div></div>
+    <section id="assets-panel" class="assets-panel hidden" aria-label="素材浏览器"><div class="asset-toolbar"><div class="asset-breadcrumb">素材库 <span>›</span> <strong id="asset-breadcrumb">全部素材</strong></div><label class="asset-search"><svg><use href="#i-search"/></svg><input id="asset-browser-search" placeholder="搜索别名或原名，空格分隔关键词" aria-label="搜索当前分类"></label><button class="tool-button" id="refresh-voices" hidden>刷新音源</button><button class="tool-button" id="costume-thumbnails" hidden>生成本页前 20 项缩略图</button><button class="tool-button" id="film-audio" hidden>本地短片音频</button><button class="tool-button" id="add-demo-asset">＋ 演示素材</button></div><div class="asset-browser"><div id="asset-tree" class="asset-tree"></div><div class="asset-content"><div class="asset-audio-filters"><label>素材来源 <select id="asset-source-filter" aria-label="素材来源"><option value="all">全部来源</option><option value="unpacked">解包素材</option><option value="project">工程素材</option><option value="shared">通用素材</option></select></label></div><div id="asset-motion-filters" class="asset-audio-filters" hidden><label>动作筛选 <select id="asset-motion-filter"><option value="all">全部</option><option value="pose">仅姿势</option><option value="animation">仅动画</option><option value="overlay">仅可叠加</option></select></label><span>可叠加：原生增量或带原始覆盖标记的动作</span></div><div id="asset-audio-filters" class="asset-audio-filters" hidden><label><input id="asset-show-prefetch" type="checkbox">显示预加载短段</label><span id="asset-prefetch-count"></span></div><div id="asset-grid" class="asset-grid"></div><div class="asset-status"><span id="asset-count"></span><div class="asset-pages" aria-label="素材分页"><button id="asset-prev" type="button" aria-label="上一页">上一页</button><label>第 <input id="asset-page" type="number" min="1" step="1" aria-label="素材页码"> 页</label><span id="asset-page-total"></span><button id="asset-next" type="button" aria-label="下一页">下一页</button></div><span id="asset-detail">拖入文件可导入 · 将角色或场景拖到层级</span></div></div></div></section>
+    </div>
+  </main>
+  <aside class="right-panel panel"><div class="panel-heading"><div><span class="eyebrow">INSPECTOR</span><h2>属性</h2></div><div><button class="icon-button" id="inspector-add" title="添加组件"><svg><use href="#i-plus"/></svg></button></div></div><div id="inspector"></div></aside>
+</div>
+<footer class="statusbar"><span><i></i> 原型已就绪</span><span>Tab 添加组件 &nbsp; · &nbsp; 空格播放 / 暂停</span><button type="button" id="notification-log" title="查看并复制本次会话的消息">消息 (0)</button><span>LOCAL DEMO <span class="status-sep">/</span> 独立 Player 窗口</span></footer>
+<div id="overlay" class="overlay hidden"><div id="modal" class="modal" role="dialog" aria-modal="true"></div></div><div id="toast" class="toast hidden"></div>
+<script src="./lipsync.js"></script>
+<script src="./fades.js"></script>
+<script src="./classroom-props.js"></script>
+<script src="./motion-names.js"></script>
+<script src="./pronunciation.js"></script>
+<script src="./layout-schema.js"></script>
+<script src="./scene-catalog.js"></script>
+<script src="./asset-settings.js"></script>
+<script src="./animation-layers.js"></script>
+<script src="./animation-layer-ui.js"></script>
+<script src="./ui-transition-graph.js"></script>
+<script src="./ui-transition-engine.js"></script>
+<script src="./ui-transition-editor.js"></script>
+<script src="./render-settings.js"></script>
+<script src="./screen-media.js"></script>
+<script src="./screen-media-editor.js"></script>
+<script src="./story-timeline.js"></script>
+<script src="./story-editor.js"></script>
+<script src="./story-voice.js"></script>
+<script src="./timeline-edit.js"></script>
+<script src="./project-removal.js"></script>
+<script src="./panel-selection.js"></script>
+<script src="./timeline-groups.js"></script>
+<script src="./post-effects.js"></script>
+<script src="./post-effects-editor.js"></script>
+<script src="./composition.js"></script>
+<script src="./composition-editor.js"></script>
+<script src="./audio-effects-preview.js"></script>
+<script src="./notifications.js"></script>
+<script src="./app.js"></script>
+<script src="./layout.js"></script>
+<script src="./embed.js"></script>
+</body></html>

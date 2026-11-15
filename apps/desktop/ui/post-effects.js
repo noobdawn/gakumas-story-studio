@@ -1,0 +1,35 @@
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.CreatorPostEffects=api;})(globalThis,()=>{
+ 'use strict';
+ const targets={background:'背景',actors:'角色',media:'图片／视频',dialogue:'字幕／对白框',transition:'转场'};
+ // Each schema describes a distinct shader algorithm; no generic effect toggles.
+ const schemas={
+ memory:{tone:['褪色色调',0,1,.65],bloom:['高光晕染',0,1,.35],threshold:['高光阈值（线性）',0,2,.65],radius:['晕染半径（画面高度 %）',0,3,1.2]},
+ television:{lineJitter:['行同步扰动',0,1,.3],bandStrength:['滚动带失真',0,1,.45],bandWidth:['干扰带宽度',.02,.5,.12],rollSpeed:['滚动速度（圈／秒）',0,2,.18],chromaOffset:['色度错位',0,1,.4],signalNoise:['信号噪声',0,1,.06]},
+ soft:{radius:['柔化半径（画面高度 %）',0,3,.9],edgeProtection:['边缘保护',0,1,.25]}};
+ const presets=Object.fromEntries(Object.entries(schemas).map(([key,fields])=>[key,{name:{memory:'回忆',television:'电视干扰',soft:'背景柔化'}[key],targets:key==='television'?['media']:key==='memory'?['background','actors']:['background'],parameters:Object.fromEntries(Object.entries(fields).map(([k,d])=>[k,d[3]]))}]));
+ const audioPresets={telephone:{name:'电话',parameters:{strength:1,output:0}},echo:{name:'回声',parameters:{delay:.25,feedback:.3,mix:.3}}};
+ const assets=[...Object.entries(presets).map(([preset,v])=>({id:'effect-visual-'+preset,type:'画面效果',source:v.name,preset,effectKind:'visual'})),...Object.entries(audioPresets).map(([preset,v])=>({id:'effect-audio-'+preset,type:'声音效果',source:v.name,preset,effectKind:'audio'}))];
+ const check=(v,message)=>{if(!v)throw Error('后处理：'+message);};
+ const number=(v,min,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max;
+ // Read existing projects without silently rewriting their effects. The old
+ // packet is usable only by the retained old Player; replacement is explicit.
+ const legacyDefaults={saturation:1,warmth:0,blur:0,noise:0,scanlines:0,vignette:0};
+ function validateLegacy(v){check(Object.hasOwn(presets,v.preset)&&typeof v.enabled==='boolean'&&number(v.strength,0,1)&&Number.isSafeInteger(v.seed)&&v.seed>=0&&v.seed<=999999,'旧效果参数无效');check(Array.isArray(v.targets)&&v.targets.length<=5&&new Set(v.targets).size===v.targets.length&&v.targets.every(t=>Object.hasOwn(targets,t)),'作用对象无效');check(Array.isArray(v.disabled||[])&&(v.disabled||[]).every(k=>Object.hasOwn(legacyDefaults,k))&&v.parameters&&Object.keys(legacyDefaults).every(k=>number(v.parameters[k],k==='warmth'?-1:0,k==='saturation'?2:1)),'旧效果参数无效');}
+ const isVisualTrack=t=>['visualFilter','visualEffect'].includes(t.type);
+ const trackType=preset=>preset==='memory'?'visualFilter':'visualEffect';
+ function visual(preset){check(!!presets[preset],'未知画面预设');return {version:2,effectType:preset,preset,scope:'below',clipIds:[],order:0,enabled:true,strength:1,seed:1,targets:[...presets[preset].targets],parameters:{...presets[preset].parameters}};}
+ function audio(preset,id){check(!!audioPresets[preset],'未知声音效果');return {id,version:1,type:preset,enabled:true,parameters:{...audioPresets[preset].parameters}};}
+ function validateVisual(v){if(v?.version===1){validateLegacy(v);return;}check(v&&v.version===2&&Object.hasOwn(presets,v.effectType)&&v.preset===v.effectType,'需要专用算法效果 v2；旧通用效果请在副本中重新创建');check(typeof v.enabled==='boolean'&&number(v.strength,0,1)&&Number.isSafeInteger(v.seed)&&v.seed>=0&&v.seed<=999999,'画面效果参数无效');check(Array.isArray(v.targets)&&v.targets.length<=5&&new Set(v.targets).size===v.targets.length&&v.targets.every(t=>Object.hasOwn(targets,t)),'作用对象无效');const schema=schemas[v.effectType];check(v.parameters&&Object.keys(v.parameters).length===Object.keys(schema).length&&Object.entries(schema).every(([k,d])=>number(v.parameters[k],d[1],d[2]))&&v.disabled===undefined,'专用算法参数无效');}
+ function validateAudio(list){check(Array.isArray(list)&&list.length<=16,'声音效果数量超过 16');const ids=new Set();for(const e of list){check(e&&e.version===1&&!!audioPresets[e.type]&&typeof e.id==='string'&&e.id.length>0&&e.id.length<=100&&!ids.has(e.id)&&typeof e.enabled==='boolean','声音效果版本、类型或标识无效');ids.add(e.id);const p=e.parameters;check(p&& (e.type==='telephone'?number(p.strength,0,1)&&number(p.output,-12,12):number(p.delay,.02,1)&&number(p.feedback,0,.85)&&number(p.mix,0,1)),'声音效果参数无效');}}
+ function validate(state){check((state.tracks||[]).filter(t=>isVisualTrack(t)).length<=32,'画面效果轨道最多 32 条');for(const t of state.tracks||[]){const clips=t.clips||[];for(const c of clips){if(c.visualEffect!==undefined){check(isVisualTrack(t),'画面效果须位于独立轨道');validateVisual(c.visualEffect);}if(isVisualTrack(t)){validateVisual(c.visualEffect);check(!clips.some(x=>x!==c&&c.start<x.start+x.len-1e-7&&c.start+c.len>x.start+1e-7),'同轨画面效果重叠');}if(c.audioEffects!==undefined){check(t.type==='audio','声音效果只能附着声音片段');validateAudio(c.audioEffects);}}}return state;}
+ function parameters(v){validateVisual(v);return v.version===1?{...v.parameters,...Object.fromEntries((v.disabled||[]).map(k=>[k,legacyDefaults[k]]))}:{...v.parameters};}
+ function effective(v){validateVisual(v);return v.enabled&&v.strength>0&&(v.scope!=='categories'||v.targets.length>0)&&(v.version!==1||Object.entries(parameters(v)).some(([k,n])=>n!==legacyDefaults[k]));}
+ function layer(c,time){const v=c.visualEffect,base={clipId:c.id,name:c.name,weight:weight(c,time),strength:v.strength,seed:v.seed};return v.version===1?{...base,...parameters(v)}:{...base,effectVersion:2,effectType:v.effectType,parameters:parameters(v)};}
+ function weight(c,time){if(time<c.start||time>=c.start+c.len)return 0;return Math.min(1,c.fadeIn?Math.max(0,(time-c.start)/c.fadeIn):1,c.fadeOut?Math.max(0,(c.start+c.len-time)/c.fadeOut):1);}
+ // Legacy projects use clean-target replacement. Composition v1 serially
+ // processes explicit category targets; below/clip scopes are composition nodes.
+ function resolve(state,time){const result=Object.fromEntries(Object.keys(targets).map(t=>[t,[]]));for(const t of [...state.tracks].reverse()){if(!isVisualTrack(t)||t.enabled===false)continue;for(const c of t.clips){const v=c.visualEffect;validateVisual(v);if(state.compositionVersion===1&&v.scope!=='categories')continue;const w=weight(c,time);if(!effective(v)||w<=0)continue;for(const target of v.targets){if(w>=1&&state.compositionVersion!==1)result[target]=[];result[target].push(layer(c,time));}}}return result;}
+ function packet(state,time){const values=resolve(state,time);return {serial:state.compositionVersion===1,enabled:state.compositionVersion===1||state.tracks.some(t=>isVisualTrack(t)&&t.enabled!==false&&t.clips.length),time,targets:Object.entries(values).filter(([,layers])=>layers.length).map(([target,layers])=>({target,layers}))};}
+ function activeAudio(clip){validateAudio(clip.audioEffects||[]);return (clip.audioEffects||[]).filter(e=>e.enabled&&(e.type!=='telephone'||e.parameters.strength>0||e.parameters.output!==0)&&(e.type!=='echo'||e.parameters.mix>0));}
+ return {isVisualTrack,trackType,parameters,layer,schemas,targets,presets,audioPresets,assets,visual,audio,validate,validateVisual,validateAudio,effective,weight,resolve,packet,activeAudio};
+});

@@ -1,0 +1,18 @@
+{
+  "id": "51bcf27e-994e-4aca-a16e-ed500791a77e",
+  "type": "贴图",
+  "alias": "制作人-思考",
+  "source": "思考.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "feb91af2f023eea4f22114f566af26897dabe3ed15887cd5124303c2dc5a61e5",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

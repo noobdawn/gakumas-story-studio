@@ -1,0 +1,18 @@
+{
+  "id": "5b8a6ef3-679e-4380-b1f4-832464cefb53",
+  "type": "贴图",
+  "alias": "制作人-摆手",
+  "source": "摆手.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "01958d653f979c056dca120a94510628137bbc5921a46df0f4b761daeae255e2",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

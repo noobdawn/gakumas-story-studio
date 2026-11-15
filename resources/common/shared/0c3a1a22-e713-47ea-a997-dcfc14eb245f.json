@@ -1,0 +1,18 @@
+{
+  "id": "0c3a1a22-e713-47ea-a997-dcfc14eb245f",
+  "type": "贴图",
+  "alias": "制作人-抱臂",
+  "source": "抱臂.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "5643fe7f53b02e16f6e0dd902b225725a78abbe89b357f78341d6d6457816393",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "7f437e59-12e4-4fb7-88c5-e764d6942408",
+  "type": "贴图",
+  "alias": "制作人-通话",
+  "source": "通话.png",
+  "scope": "shared",
+  "extension": ".png",
+  "visual": {
+    "version": 1,
+    "kind": "image",
+    "sha256": "1569b62e99ff1cb4fb87ea87a56961cf8012474fcc86e0dc8c2ba466cc8c8c72",
+    "sourceWidth": 1254,
+    "sourceHeight": 1254,
+    "hasAudio": false,
+    "width": 1254,
+    "height": 1254
+  }
+}

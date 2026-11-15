@@ -1,0 +1,23 @@
+[
+  {
+    "name": "core",
+    "url": "https://github.com/VOICEVOX/voicevox_core/releases/download/0.17.1/voicevox_core-0.17.1-cp310-abi3-win_amd64.whl",
+    "sha256": "faaac91e7b19c32d60fcbd4f38b91681e576ec3de01330aa3f37c33ae05db6d1",
+    "bytes": 2022868,
+    "kind": "zip"
+  },
+  {
+    "name": "onnxruntime",
+    "url": "https://github.com/VOICEVOX/onnxruntime-builder/releases/download/voicevox_onnxruntime-1.17.3/voicevox_onnxruntime-win-x64-1.17.3.tgz",
+    "sha256": "32b07e7c6c59030434b54eb0255912510942faf193c7a14e0e1a168db5796265",
+    "bytes": 4650448,
+    "kind": "tgz"
+  },
+  {
+    "name": "dictionary",
+    "url": "https://github.com/r9y9/open_jtalk/releases/download/v1.11.1/open_jtalk_dic_utf_8-1.11.tar.gz",
+    "sha256": "fe6ba0e43542cef98339abdffd903e062008ea170b04e7e2a35da805902f382a",
+    "bytes": 23646843,
+    "kind": "tgz"
+  }
+]
