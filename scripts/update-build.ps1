@@ -6,6 +6,16 @@ $venv=Join-Path $repoRoot '.venv/Scripts/python.exe'
 if (!(Test-Path -LiteralPath $venv)) {throw 'Run scripts/bootstrap.ps1 first.'}
 if (!$Tools) {$Tools=Join-Path $build 'runtime/tools'}
 if (!$PythonRuntime) {$PythonRuntime=Join-Path $build 'runtime/python'}
+function AssertLocalPath([string]$target) {
+ $resolved=[IO.Path]::GetFullPath($target)
+ if(!$resolved.StartsWith($repoRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Target escapes the repository'}
+ $ancestor=$resolved
+ while($ancestor) {
+  if(Test-Path -LiteralPath $ancestor){if((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Build paths cannot pass through links'}}
+  if($ancestor -eq $repoRoot){break}
+  $ancestor=Split-Path -Parent $ancestor
+ }
+}
 function AssertIdle {
  $active=Get-CimInstance Win32_Process | Where-Object {
   ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($build+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) -or
@@ -14,6 +24,7 @@ function AssertIdle {
  if ($active) {throw 'Close the current build and its Unity source project before updating.'}
 }
 function RemoveStage([string]$target) {
+ AssertLocalPath $target
  $resolved=[IO.Path]::GetFullPath($target)
  $allowed=Join-Path $repoRoot '.local'
  if (!$resolved.StartsWith($allowed+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {throw 'Unexpected staging path'}
@@ -23,6 +34,7 @@ AssertIdle
 $stage=Join-Path $repoRoot ('.local/build-'+[guid]::NewGuid().ToString('N'))
 $candidate=Join-Path $stage 'candidate'
 $previous=Join-Path $stage 'previous'
+foreach($target in @($build,$stage,$candidate,$previous)){AssertLocalPath $target}
 New-Item -ItemType Directory -Path $stage | Out-Null
 $promoted=$false
 try {
@@ -38,6 +50,7 @@ try {
  & $venv (Join-Path $PSScriptRoot 'verify-package.py') $candidate;if($LASTEXITCODE){throw 'Portable check failed'}
  & $venv (Join-Path $PSScriptRoot 'checkpoint.py') --message $Message;if($LASTEXITCODE){throw 'Source checkpoint failed'}
  AssertIdle
+ foreach($target in @($build,$candidate,$previous)){AssertLocalPath $target}
  if (Test-Path -LiteralPath $build) {Move-Item -LiteralPath $build -Destination $previous}
  try {Move-Item -LiteralPath $candidate -Destination $build;$promoted=$true}
  catch {if(Test-Path -LiteralPath $previous){Move-Item -LiteralPath $previous -Destination $build};throw}
