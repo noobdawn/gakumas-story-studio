@@ -18,8 +18,9 @@
 - `./scripts/bootstrap.ps1`：创建本地 Python 环境并安装 Electron 依赖。
 - `python scripts/check.py`：语法与预设清单校验，不需要游戏素材。
 - `node --test apps/desktop/electron/tests/*.test.js`：工作台逻辑测试。Windows DPAPI 测试需正常用户上下文。
-- `./scripts/build-player.ps1 -Unity '你的 Unity.exe 路径'`：无界面构建到新的 runtime/player，拒绝覆盖输出或占用中的工程。
-- `./scripts/start.ps1`：手动启动工作台；可通过 `-DataDirectory` 使用已有数据目录，通过 `-Project` 显式加载工程。
+- `scripts/build-player.ps1`：底层 Unity 构建入口，须显式传入新的 `-Output` 临时目录，通常由 update-build.ps1 调用。
+- `./scripts/start.ps1`：启动唯一的 `build/GSS.exe`；可通过 `-DataDirectory` 指定数据目录，通过 `-Project` 显式加载工程。
+- `./scripts/update-build.ps1 -Unity '你的 Unity.exe 路径'`：验证并替换唯一 build，最多保留 3 个源码回退分支。详见 [单 build 工作流](docs/developer/local-builds.md)。
 
 首次构建／依赖安装需网络。运行素材必须来自当前游戏对应的有效受管理批次，不回退研究样本。
 

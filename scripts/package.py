@@ -3,7 +3,7 @@ import argparse, hashlib, json, shutil, zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--python',type=Path,required=True);ap.add_argument('--tools',type=Path,required=True);ap.add_argument('--player',type=Path,default=ROOT/'runtime/player');ap.add_argument('--output',type=Path,required=True);a=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('--python',type=Path,required=True);ap.add_argument('--tools',type=Path,required=True);ap.add_argument('--player',type=Path,default=ROOT/'runtime/player');ap.add_argument('--output',type=Path,required=True);ap.add_argument('--no-archive',action='store_true');a=ap.parse_args()
     output=a.output.resolve()
     if any(p.exists() for p in [output,Path(str(output)+'.zip'),Path(str(output)+'.zip.sha256')]):raise SystemExit('Output or archive already exists')
     if not (a.python/'python.exe').is_file() or not list(a.python.glob('python*._pth')):raise SystemExit('Use a prepared portable CPython runtime, not a venv')
@@ -24,6 +24,8 @@ def main():
     for file in ['README.md','LICENSE','CONTRIBUTING.md','THIRD_PARTY_NOTICES.md','release-policy.json']:shutil.copy2(ROOT/file,output/file)
     hashes={p.relative_to(output).as_posix():hashlib.file_digest(p.open('rb'),'sha256').hexdigest() for p in output.rglob('*') if p.is_file()}
     (output/'manifest-sha256.json').write_text(json.dumps(hashes,indent=2),'utf-8')
+    if a.no_archive:
+        print(output);return
     archive=Path(shutil.make_archive(str(output),'zip',root_dir=output.parent,base_dir=output.name))
     archive.with_suffix('.zip.sha256').write_text(hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()+'  '+archive.name+'\n','utf-8')
     print(archive)

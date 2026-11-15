@@ -1,8 +1,7 @@
-param([Parameter(Mandatory)][string]$Unity,[string]$Output,[string]$Report)
+param([Parameter(Mandatory)][string]$Unity,[Parameter(Mandatory)][string]$Output,[string]$Report)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repoRoot 'unity\CreatorPlayer'
-if (!$Output) { $Output = Join-Path $repoRoot 'runtime\player' }
 if (!$Report) { $Report = Join-Path $repoRoot '.local\build' }
 $Output = [IO.Path]::GetFullPath($Output)
 $occupied = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'Unity.exe' -and $_.CommandLine -like ('*' + $project + '*') }

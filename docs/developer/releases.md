@@ -14,6 +14,8 @@
 
 ## 本地组包
 
+日常只保留 `build/`，使用 [单 build 工作流](local-builds.md)；`--no-archive` 不生成重复 ZIP。发布工作流仍输出 ZIP 与 SHA-256 供 GitHub Release 下载。
+
 使用 scripts/prepare-python.py 准备新的便携 Python 目录。scripts/package.py 通过 --python、--tools、--player 指向明确运行时输入，--output 必须为新目录。输出包含 GSS.exe、运行时、通用预设、源码与哈希；不包含用户库、密钥、游戏资源或 Unity Library。
 
 本地候选工具输入已保留 FFmpeg 6.0（Gyan full build）的 GPL v3 文件与构建 README，以及 vgmstream r2168 的 COPYING、README、USAGE。当前仅用于本机候选验证，公开版本还需确定工具构建及其完整分发材料；不要仅凭文件名 THIRD_PARTY_NOTICES.txt 判断已经审核完毕。

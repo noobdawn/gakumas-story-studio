@@ -3,6 +3,11 @@ import ast, hashlib, json, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def main():
+    for name in ['CreatorPrototypePlayer.cs','CreatorPostEffects.shader','ActorNativeForwardFeature.cs']:
+        p=ROOT/'unity/CreatorPlayer/Assets/Runtime'/name
+        assert p.is_file(), 'Missing Unity source: '+str(p)
+        if (ROOT/'.git').exists():
+            subprocess.run(['git','ls-files','--error-unmatch',p.relative_to(ROOT).as_posix()],cwd=ROOT,check=True,capture_output=True)
     for p in (ROOT/'services').rglob('*.py'):ast.parse(p.read_text('utf-8-sig'),filename=str(p))
     for p in (ROOT/'apps/desktop').rglob('*.js'):
         if 'node_modules' in p.parts:continue
