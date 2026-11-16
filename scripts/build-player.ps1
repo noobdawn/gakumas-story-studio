@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Unity,[Parameter(Mandatory)][string]$Output,[string]$Report)
+param([Parameter(Mandatory)][string]$Unity,[Parameter(Mandatory)][string]$Output,[string]$Report,[switch]$GpuExportPrototype)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repoRoot 'unity\CreatorPlayer'
@@ -8,6 +8,15 @@ $occupied = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'Unity.ex
 if ($occupied) { throw 'Unity project is open; close it before building.' }
 if (Test-Path -LiteralPath $Output) { throw 'Choose a new output directory.' }
 New-Item -ItemType Directory -Path $Report -Force | Out-Null
+$plugin = Join-Path $project 'Assets/Plugins/x86_64/GSSGpuExport.dll'
+if (Test-Path -LiteralPath $plugin) { throw 'Remove the previously staged GPU plugin before building.' }
+try {
+if ($GpuExportPrototype) {
+ $nativeOutput = Join-Path $Report ('native-'+[guid]::NewGuid().ToString('N'))
+ & (Join-Path $PSScriptRoot 'build-gpu-export.ps1') -Output $nativeOutput
+ New-Item -ItemType Directory -Path (Split-Path -Parent $plugin) -Force | Out-Null
+ Copy-Item -LiteralPath (Join-Path $nativeOutput 'GSSGpuExport.dll') -Destination $plugin
+}
 $env:GSS_PLAYER_OUTPUT = $Output
 $env:GSS_CHECK_REPORT = Join-Path $Report 'unity-checks.json'
 $process = Start-Process -FilePath $Unity -ArgumentList @('-batchmode','-force-d3d11','-buildTarget','Win64','-projectPath',('"'+$project+'"'),'-executeMethod','CreatorBuild.Run','-logFile',('"'+(Join-Path $Report 'unity.log')+'"')) -WindowStyle Hidden -PassThru
@@ -15,3 +24,10 @@ $process = Start-Process -FilePath $Unity -ArgumentList @('-batchmode','-force-d
 $process.WaitForExit()
 if ($process.ExitCode -ne 0) { throw "Unity build failed: $($process.ExitCode)" }
 if (!(Select-String -LiteralPath (Join-Path $Output 'build-report.txt') -Pattern '^errors=0$')) { throw 'Build report is not clean' }
+} finally {
+ if ($GpuExportPrototype) {
+  foreach($stagedFile in @($plugin,($plugin+'.meta'))) {
+   if (Test-Path -LiteralPath $stagedFile) { Remove-Item -LiteralPath $stagedFile -Force }
+  }
+ }
+}

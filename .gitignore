@@ -17,4 +17,6 @@ unity/**/Obj/
 unity/**/UserSettings/
 unity/**/Assets/GSSBuild*/
 unity/**/Assets/GSSBuild*.meta
+unity/**/Assets/Plugins/x86_64/GSSGpuExport.dll
+unity/**/Assets/Plugins/x86_64/GSSGpuExport.dll.meta
 user-library/

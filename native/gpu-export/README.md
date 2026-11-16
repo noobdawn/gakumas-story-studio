@@ -1,0 +1,35 @@
+# D3D11 / NVENC export prototype
+
+Opt-in diagnostics only: `video.benchmark` with `gpuVideo: true`, native final
+composition, a new destination, and at most 300 frames. Normal exports keep
+the existing PNG / libx264 route. NVIDIA hardware, a compatible driver,
+Direct3D 11 and Unity Linear color space are required; failure is explicit.
+
+`GssGpuExport.cpp` copies the display texture into an eight-slot D3D11 pool,
+submits NVENC asynchronously, and writes compressed packets on an output
+thread. No full-size pixels are mapped/read back. Input texture dimensions,
+format, driver capabilities, frame order and output timestamps are checked.
+Unity retains its display target until the render callback has accepted it.
+The plugin retains native references until draining/destruction finishes.
+
+The first experiment uses H.264 High, P4 HQ, constant QP 18, no B frames and no
+lookahead. QP 18 is **not equivalent** to x264 CRF 18. Source frame `i` has
+timestamp `i`, duration 1 and time base `1/fps`; the sidecar is validated before
+FFmpeg synthesizes these CFR timestamps and stream-copies video into MP4.
+Adding B frames/VFR requires a timestamp-aware packet/container interface;
+the present raw H.264 contract must not be reused for that change.
+
+Build using `scripts/build-gpu-export.ps1 -Output <new directory>` (VS 2022 C++
+tools and Windows SDK). The NVENC header is vendored from:
+
+https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/n12.0.16.1/include/ffnvcodec/nvEncodeAPI.h
+
+SHA-256: `808db2a21232839ee8a6057601f1964e90b20385f6dbf080f3cd33f6470c66c4`.
+Its original MIT license is included in the header. The runtime loads
+`nvEncodeAPI64.dll` only from the Windows system directory.
+
+Use `scripts/build-player.ps1 -GpuExportPrototype` to stage the native plugin
+temporarily in an unoccupied Unity project, build a new Player and remove the
+staged DLL. No game resources or private configuration are bundled. The
+`creator-gpu-export-v1` capability marker is emitted only if the DLL is present
+in the built Player. The first round does not enable GPU export in normal UI.

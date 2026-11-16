@@ -385,6 +385,24 @@ def main():
             stopping = threading.Event()
             export_job = None
             export_dir = None
+            def gpu_export_command(kind, **values):
+                request=dict(token=token,id=0,kind=kind,**values)
+                with lock:
+                    conn.sendall((json.dumps(request,separators=(',', ':'))+'\n').encode())
+                    reply=json.loads(stream.readline(4097))
+                if reply.get('ok') is not True:raise RuntimeError('GPU 导出失败：'+str(reply.get('error','Player 回复无效')))
+                return reply
+            def cancel_export():
+                nonlocal export_job, export_dir
+                job=export_job
+                try:
+                    if job is not None and job.gpu_video:gpu_export_command('gpu-export-cancel')
+                finally:
+                    try:
+                        if job is not None:job.cancel()
+                    finally:
+                        export_job=None
+                        if export_dir is not None:export_dir.cleanup();export_dir=None
             class Handler(PreviewRequestHandler):
                 def log_message(self, *unused): pass
                 def do_GET(self):
@@ -487,6 +505,10 @@ def main():
                         message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint=='state' else 20000)
                         parsed_at = time.perf_counter()
                         if endpoint == 'state':
+                            # GPU lifecycle and frame mode are selected by the active job,
+                            # never by a caller-supplied state packet.
+                            if str(message.get('kind','')).startswith('gpu-export-'):raise ValueError('GPU 命令需要诊断导出入口')
+                            for key in ('gpuVideo','gpuVideoFps','exportIndex'):message.pop(key,None)
                             profiling = message.get('profileExport') is True
                             if profiling and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                             dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
@@ -528,27 +550,38 @@ def main():
                         elif endpoint == 'export-start':
                             if not export_capable or export_job is not None: raise ValueError('导出不可用或已在进行')
                             if message.get('profileExport') is True and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
+                            if message.get('gpuVideo') is True and not (player.parent/'creator-gpu-export-v1').is_file():raise ValueError('Player 不支持 GPU 视频诊断')
                             from export_video import VideoExport
-                            export_dir=tempfile.TemporaryDirectory(prefix='export-',dir=output)
                             message['nativePostEffects'] = message.get('nativePostEffects') is True
                             if message['nativePostEffects'] and not (player.parent/'creator-post-effects-v1').is_file():raise ValueError('当前 Player 不支持画面效果')
                             message['nativeUI'] = bool(ui_graph_capable and message.get('uiTransitions') and not message['nativePostEffects'])
                             message['dialogueNameRoundCaps'] = (player.parent / 'creator-dialogue-proportional-cap-v1').is_file()
-                            try: export_job=VideoExport(message,library_root,export_dir.name,args.dialogue_assets if game_dialogue else None)
-                            except Exception:
-                                export_dir.cleanup();export_dir=None;raise
-                            reply={'ok':True,'frames':export_job.frames,'startFrame':export_job.start_frame,'runId':export_job.run_id,'profile':export_job.profile}
+                            export_dir=tempfile.TemporaryDirectory(prefix='export-',dir=output)
+                            try:
+                                export_job=VideoExport(message,library_root,export_dir.name,args.dialogue_assets if game_dialogue else None,gpu_input=Path(output)/'export-gpu.h264')
+                                if export_job.gpu_video:
+                                    from export_diagnostics import validate_gpu_reply
+                                    gpu_reply=gpu_export_command('gpu-export-start',frameWidth=export_job.width,frameHeight=export_job.height,gpuVideoFps=export_job.fps)
+                                    validate_gpu_reply(gpu_reply,0,final=True)
+                            except Exception as start_error:
+                                try:cancel_export()
+                                except Exception as cleanup_error:raise RuntimeError(str(start_error)+'；GPU 清理失败：'+str(cleanup_error)) from start_error
+                                raise
+                            reply={'ok':True,'frames':export_job.frames,'startFrame':export_job.start_frame,'runId':export_job.run_id,'profile':export_job.profile,'gpuVideo':export_job.gpu_video}
                         elif endpoint == 'export-frame':
                             if export_job is None or message.get('index')!=export_job.count: raise ValueError('帧顺序无效')
                             request={'token':token,'id':message.get('id',0),'kind':'frame','frameWidth':export_job.width,'frameHeight':export_job.height,'captureUiLayer':export_job.native_ui,'includeUiOverlay':export_job.native_post}
-                            request.update(profileExport=export_job.profile,frameIndex=export_job.start_frame+export_job.count,runId=export_job.run_id,skipPreRender=message.get('skipPreRender') is True,gpuColor=message.get('gpuColor') is True)
+                            request.update(profileExport=export_job.profile,frameIndex=export_job.start_frame+export_job.count,runId=export_job.run_id,skipPreRender=message.get('skipPreRender') is True,gpuColor=message.get('gpuColor') is True,gpuVideo=export_job.gpu_video,exportIndex=export_job.count)
                             prepared_at = time.perf_counter()
                             with lock:
                                 locked_at = time.perf_counter()
                                 conn.sendall((json.dumps(request,separators=(',', ':'))+'\n').encode())
                                 reply=json.loads(stream.readline(4097))
                                 captured_at = time.perf_counter()
-                                if reply.get('ok'):
+                                if export_job.gpu_video:
+                                    export_job.write_gpu(reply)
+                                    if export_job.profile:reply['hostTiming']=dict(lockMs=(locked_at-prepared_at)*1000,unityRoundtripMs=(captured_at-locked_at)*1000,fileReadMs=0,pipeWriteMs=0,frameBytes=0,uiBytes=0)
+                                elif reply.get('ok'):
                                     image=(Path(output)/'export-frame.png').read_bytes()
                                     ui_image=(Path(output)/'export-ui.png').read_bytes() if export_job.native_ui else None
                                     read_at=time.perf_counter()
@@ -564,10 +597,13 @@ def main():
                                         reply['pngSha256']=hashlib.sha256(image).hexdigest()
                         elif endpoint == 'export-finish':
                             if export_job is None: raise ValueError('没有进行中的导出')
-                            export_job.finish();export_job=None;export_dir.cleanup();export_dir=None;reply={'ok':True}
+                            reply={'ok':True}
+                            if export_job.gpu_video:
+                                reply=gpu_export_command('gpu-export-finish',exportIndex=export_job.frames)
+                                export_job.complete_gpu(reply)
+                            export_job.finish();export_job=None;export_dir.cleanup();export_dir=None
                         elif endpoint == 'export-cancel':
-                            if export_job is not None: export_job.cancel();export_job=None
-                            if export_dir is not None: export_dir.cleanup();export_dir=None
+                            cancel_export()
                             reply={'ok':True}
                         elif endpoint == 'bounds':
                             if embedded is None: raise ValueError('No embedded Player')
@@ -584,7 +620,11 @@ def main():
                     except Exception as e:
                         # All POST endpoints are JSON APIs. Preserve the actual
                         # failure instead of hiding it behind an HTML parse error.
-                        self.send_json({'ok':False,'error':str(e)},502)
+                        error=str(e)
+                        if export_job is not None and export_job.gpu_video and endpoint in ('state','export-frame','export-finish'):
+                            try:cancel_export()
+                            except Exception as cleanup_error:error+='；GPU 清理失败：'+str(cleanup_error)
+                        self.send_json({'ok':False,'error':error},502)
             server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             origin = 'http://127.0.0.1:' + str(server.server_port)
             url = origin + '/' + token + '/ui/?' + ('embedded=1&' if embedded else '') + ('performance=1' if performance else 'performance=0') + ('&settings=1' if global_settings else '&settings=0') + ('&assets=1' if asset_features else '&assets=0') + ('&costumes=1' if costume_capable else '&costumes=0') + ('&costumePhysics=1' if (player.parent/'creator-costume-physics-v1').is_file() else '&costumePhysics=0') + ('&hairPhysics=1' if (player.parent/'creator-hair-physics-v1').is_file() else '&hairPhysics=0') + ('&arrangement=1' if arrangement else '&arrangement=0') + ('&editorGizmo=1' if editor_gizmo else '&editorGizmo=0') + ('&gizmoTrs=1' if gizmo_trs else '&gizmoTrs=0') + ('&editorGizmoTest=1' if editor_gizmo and os.environ.get('CREATOR_TEST_INSTANCE')=='1' and os.environ.get('CREATOR_GIZMO_TEST')=='1' else '&editorGizmoTest=0') + ('&dialogueStyles=1' if dialogue_styles else '&dialogueStyles=0') + ('&gameDialogue=1' if game_dialogue else '&gameDialogue=0') + ('&dialogueColors=1' if (player.parent/'creator-dialogue-colors-v1').is_file() else '&dialogueColors=0') + ('&faces=1' if faces else '&faces=0') + ('&faceDecals=1' if face_decals else '&faceDecals=0') + ('&roundEyes=1' if round_eyes else '&roundEyes=0') + ('&headEffects=1' if head_effects else '&headEffects=0') + ('&eyeMaterials=1' if eye_materials else '&eyeMaterials=0') + ('&eyeBones=1' if eye_bones else '&eyeBones=0') + ('&export=1' if export_capable else '&export=0') + ('&idle=1' if idle_capable else '&idle=0') + ('&motionBlend=1' if blend_capable else '&motionBlend=0') + ('&uiTransitions=2' if ui_graph_capable else '&uiTransitions=1' if ui_capable else '&uiTransitions=0') + ('&animationLayers=1' if layers_capable else '&animationLayers=0') + ('&classroomChairs=1' if prop_capable else '&classroomChairs=0') + ('&classroomProps=1' if generic_props else '&classroomProps=0') + ('&renderSettings=1' if (player.parent/'creator-render-settings-v1').is_file() else '&renderSettings=0') + ('&screenMedia=1' if (player.parent/'creator-screen-media-v1').is_file() else '&screenMedia=0') + ('&postEffects=1' if (player.parent/'creator-post-effects-v1').is_file() else '&postEffects=0') + ('&composition=1' if (player.parent/'creator-composition-v1').is_file() else '&composition=0') + '&actors=' + ','.join(actor_codes) + '&missingShapes=' + quote(','.join(missing_shapes),safe=',:') + '&faceNames=' + quote(','.join(face_names), safe=',') + '&scenes=' + ','.join(available_scenes) + '&motions=' + ','.join(available_motions)
@@ -600,9 +640,8 @@ def main():
             try: server.serve_forever()
             except KeyboardInterrupt: pass
             finally:
-                if export_job is not None: export_job.cancel()
-                if export_dir is not None: export_dir.cleanup()
-                server.server_close(); stream.close(); conn.close()
+                try:cancel_export()
+                finally:server.server_close(); stream.close(); conn.close()
         finally:
             listener.close()
             if proc.poll() is None:

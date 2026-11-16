@@ -1,7 +1,7 @@
 """Experimental offline MP4 encoder; frame images are supplied by the Unity Player."""
 import math
 import time
-from export_diagnostics import sample_range, validate_profile
+from export_diagnostics import sample_range, validate_profile, validate_gpu_video, validate_gpu_reply, validate_gpu_frames
 import hashlib
 import json
 import os
@@ -196,8 +196,9 @@ def sliced_png(ffmpeg, source, destination, width, height, borders, scale, gradi
     destination.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(b''.join(rows)))+chunk(b'IEND',b''))
 
 class VideoExport:
-    def __init__(self, config, root, directory, dialogue_assets=None):
+    def __init__(self, config, root, directory, dialogue_assets=None, *, gpu_input=None):
         self.directory=Path(directory); self.root=Path(root).resolve(); self.proc=None; self.log=None; self.output=None; self.temp=None; self.audio_directory=None
+        self.gpu_input=None;self.gpu_sidecar=None;self.gpu_completed=0
         self.native_post=config.get('nativePostEffects',False) is True
         self.native_ui=config.get('nativeUI',False) is True;self.ui_frames=[];self.ui_files={}
         self.fps=config.get('fps'); self.width=config.get('width'); self.height=config.get('height')
@@ -209,6 +210,11 @@ class VideoExport:
         self.run_id=run_id
         self.start_frame,self.end_frame=sample_range(config,self.frames,self.native_post)
         self.frames=self.end_frame-self.start_frame
+        self.gpu_video=validate_gpu_video(config,self.native_post,self.native_ui,self.frames)
+        if self.gpu_video:
+            if gpu_input is None or Path(gpu_input).name!='export-gpu.h264':raise ValueError('GPU 导出输入路径无效')
+            gpu_input=Path(gpu_input).resolve();sidecar=gpu_input.with_suffix('.frames.jsonl')
+            if not gpu_input.parent.is_dir() or gpu_input.exists() or sidecar.exists():raise ValueError('GPU 导出临时文件已存在或目录无效')
         output=Path(config.get('output',''))
         if not output.is_absolute() or output.suffix.lower()!='.mp4' or not output.parent.is_dir(): raise ValueError('视频保存位置无效')
         parent=output.parent.resolve(); assert_video_destination(parent,self.root)
@@ -220,12 +226,14 @@ class VideoExport:
         self.temp=parent/('.'+output.stem+'-'+secrets.token_hex(12)+'.tmp.mp4')
         fd=os.open(self.temp,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)
         try:
+            if self.gpu_video:self.gpu_input=gpu_input;self.gpu_sidecar=sidecar
             ffmpeg=shutil.which('ffmpeg')
             if not ffmpeg: raise ValueError('未找到 FFmpeg；请安装并加入 PATH')
             audio=config.get('audio',[]); captions=[] if self.native_post else config.get('captions',[])
             if not isinstance(audio,list) or len(audio)>MAX_AUDIO_CLIPS: raise ValueError(f'导出音频片段数量无效（最多 {MAX_AUDIO_CLIPS} 个）')
             if not isinstance(captions,list) or len(captions)>10000: raise ValueError('导出字幕片段数量无效（最多 10000 个）')
-            args=[ffmpeg,'-hide_banner','-loglevel','error','-y','-f','image2pipe','-vcodec','png','-framerate',str(self.fps),'-i','pipe:0']
+            args=[ffmpeg,'-hide_banner','-loglevel','error','-y']
+            args+=(['-fflags','+genpts','-r',str(self.fps),'-f','h264','-i',str(self.gpu_input)] if self.gpu_video else ['-f','image2pipe','-vcodec','png','-framerate',str(self.fps),'-i','pipe:0'])
             entries=[];loop_costs={}
             for i,item in enumerate(audio):
                 start=number(item.get('start'),0,self.duration); original_length=number(item.get('length'),0,3600); offset=number(item.get('offset',0),0,3600)
@@ -320,15 +328,22 @@ class VideoExport:
                 filters.append(''.join(audio_labels)+f'amix=inputs={len(audio_labels)}:normalize=0:duration=longest,apad,{trim}[a]');args+=['-map','[a]','-c:a','aac','-b:a','192k']
             if filters:
                 (self.directory/'filter.txt').write_text(';'.join(filters),encoding='utf-8');args+=['-filter_complex_script','filter.txt']
-            if self.native_ui:
+            if self.gpu_video:
+                # Input already contains exactly the validated frame count.
+                # A video packet limit can stop fast streamcopy before the audio
+                # trim/mix has produced its first packet. Let both inputs drain.
+                args+=['-c:v','copy','-movflags','+faststart',str(self.temp)]
+            elif self.native_ui:
                 self.base_video=self.directory/'captioned-base.mkv'
                 args+=['-c:v','ffv1','-level','3','-pix_fmt','yuv444p','-frames:v',str(self.frames),str(self.base_video)]
             else:
                 args+=['-c:v','libx264','-preset','medium','-crf','18','-pix_fmt','yuv420p','-movflags','+faststart','-frames:v',str(self.frames),str(self.temp)]
-            self.log=(self.directory/'ffmpeg.log').open('wb');self.proc=subprocess.Popen(args,cwd=self.directory,stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=self.log,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            self.encode_args=args
+            if not self.gpu_video:self.start_encoder()
         except Exception:
             self.cancel();raise
     def write(self, image, ui_image=None):
+        if self.gpu_video:raise ValueError('GPU 导出不接受 PNG 帧')
         if self.count>=self.frames or not image.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('Invalid export frame')
         if self.native_ui:
             if not isinstance(ui_image,bytes) or not ui_image.startswith(b'\x89PNG\r\n\x1a\n') or len(ui_image)<24 or struct.unpack('>II',ui_image[16:24])!=(self.width,self.height):raise ValueError('UI 导出帧缺失或尺寸错误')
@@ -342,6 +357,16 @@ class VideoExport:
             start=time.perf_counter();self.proc.stdin.write(image);self.count+=1
             if self.profile:self.last_write_ms=(time.perf_counter()-start)*1000
         except (BrokenPipeError,OSError) as e: raise RuntimeError('FFmpeg 编码失败：'+self.error()) from e
+    def start_encoder(self):
+        self.log=(self.directory/'ffmpeg.log').open('wb')
+        self.proc=subprocess.Popen(self.encode_args,cwd=self.directory,stdin=subprocess.DEVNULL if self.gpu_video else subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=self.log,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    def write_gpu(self, reply):
+        if not self.gpu_video or self.count>=self.frames:raise ValueError('GPU 导出帧顺序无效')
+        completed=validate_gpu_reply(reply,self.count+1,self.gpu_completed)
+        self.count+=1;self.gpu_completed=completed
+    def complete_gpu(self, reply):
+        if not self.gpu_video or self.count!=self.frames:raise ValueError('GPU 导出帧不完整')
+        self.gpu_completed=validate_gpu_reply(reply,self.frames,self.gpu_completed,final=True)
     def error(self):
         if self.log:self.log.flush()
         file=self.directory/'ffmpeg.log'
@@ -353,7 +378,13 @@ class VideoExport:
         except FileNotFoundError: return None
     def finish(self):
         if self.count!=self.frames: raise ValueError('视频帧不完整')
-        self.proc.stdin.close();code=self.proc.wait()
+        if getattr(self,'gpu_video',False):
+            if self.gpu_completed!=self.frames:raise ValueError('GPU 编码尚未完成')
+            validate_gpu_frames(self.gpu_sidecar,self.frames,self.fps)
+            if not self.gpu_input.is_file() or not self.gpu_input.stat().st_size:raise ValueError('GPU 编码文件缺失或为空')
+            self.start_encoder()
+        if self.proc.stdin:self.proc.stdin.close()
+        code=self.proc.wait()
         if code: raise RuntimeError('FFmpeg 编码失败：'+self.error())
         self.log.close();self.log=None
         if self.native_ui:self.finish_ui()
@@ -365,6 +396,7 @@ class VideoExport:
         else:
             os.replace(self.temp,self.output);self.temp=None
         if self.audio_directory:self.audio_directory.cleanup();self.audio_directory=None
+        self.clean_gpu_files()
     def finish_ui(self):
         if len(self.ui_frames)!=self.frames:raise ValueError('UI 导出帧不完整')
         args=[shutil.which('ffmpeg'),'-hide_banner','-loglevel','error','-y','-i',str(self.base_video),'-f','image2pipe','-vcodec','png','-framerate',str(self.fps),'-i','pipe:0','-filter_complex','[0:v][1:v]overlay=0:0:format=auto:shortest=1[v]','-map','[v]','-map','0:a?','-c:a','copy','-c:v','libx264','-preset','medium','-crf','18','-pix_fmt','yuv420p','-movflags','+faststart','-frames:v',str(self.frames),str(self.temp)]
@@ -393,3 +425,7 @@ class VideoExport:
             try:self.temp.unlink(missing_ok=True)
             except OSError:pass
         if self.audio_directory:self.audio_directory.cleanup();self.audio_directory=None
+        self.clean_gpu_files()
+    def clean_gpu_files(self):
+        for path in (self.gpu_input,self.gpu_sidecar):
+            if path is not None:path.unlink(missing_ok=True)

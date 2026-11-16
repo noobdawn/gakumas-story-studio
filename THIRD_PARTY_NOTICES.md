@@ -14,5 +14,6 @@
 | Open JTalk 词典 | pyopenjtalk 上游维护者 r9y9 的 v1.11.1 分发，安装时保留词典版权文件 |
 | GPT-SoVITS | 仅提供本地配置适配，不在当前候选包中附带模型、参考音频或第三方引擎代码 |
 | FFmpeg / FFprobe / vgmstream | 由发布运行时输入提供；必须连同匹配版本的许可与来源说明，不从个人安装目录不加说明地上传 |
+| NVENC API 头文件 | `native/gpu-export/include/nvEncodeAPI.h` 来自 FFmpeg/nv-codec-headers 固定标签 n12.0.16.1；文件保留 NVIDIA 2010–2022 版权及 MIT 许可全文。GPU 验证插件运行时使用系统 NVIDIA 驱动，不分发驱动 |
 
 对软件发布及声库使用条件的最终确认尚未完成。维护者在确定项目许可证和预设资源公开发布依据后更新 release-policy.json。
