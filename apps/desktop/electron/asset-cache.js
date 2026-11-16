@@ -26,7 +26,11 @@ function create({dataRoot,gameDirectory,python='python',scripts=require('./runti
  }
  async function acquire(cache){
   if(lease?.managed===cache.managed)return;if(heldLeases.has(cache.managed)){lease=heldLeases.get(cache.managed);return;}const file=path.join(cache.managed,'.creator-cache.lock'),id=crypto.randomUUID();
-  try{const handle=await fs.open(file,'wx');try{await handle.writeFile(JSON.stringify({pid:process.pid,id}));}finally{await handle.close();}lease={...cache,file,lockId:id};heldLeases.set(cache.managed,lease);}catch(e){if(e.code!=='EEXIST')throw e;let previous;try{previous=JSON.parse(await fs.readFile(file,'utf8'));}catch{throw Error('缓存占用标记无法读取，不能安全操作');}if(!Number.isSafeInteger(previous.pid)||previous.pid<=0||!UUID.test(previous.id||''))throw Error('缓存占用标记无效，不能安全操作');let alive=true;try{process.kill(previous.pid,0);}catch(error){if(error.code==='ESRCH')alive=false;}throw Error(alive?'缓存正被另一个创作器实例使用，请先关闭占用它的实例':'缓存存在异常退出留下的占用标记，请先检查该缓存是否仍被使用');}
+  for(let attempt=0;attempt<4;attempt++){
+   try{const handle=await fs.open(file,'wx');try{await handle.writeFile(JSON.stringify({pid:process.pid,id}));}finally{await handle.close();}lease={...cache,file,lockId:id};heldLeases.set(cache.managed,lease);return;}
+   catch(e){if(e.code!=='EEXIST')throw e;let previous;try{previous=JSON.parse(await fs.readFile(file,'utf8'));}catch(error){if(error.code==='ENOENT')continue;throw Error('缓存占用标记无法读取，不能安全操作');}if(!Number.isSafeInteger(previous.pid)||previous.pid<=0||!UUID.test(previous.id||''))throw Error('缓存占用标记无效，不能安全操作');let alive=true;try{process.kill(previous.pid,0);}catch(error){if(error.code==='ESRCH')alive=false;}if(alive)throw Error('缓存正被另一个创作器实例使用，请先关闭占用它的实例');await require('./cache-lease').recover(cache.managed,previous);}
+  }
+  throw Error('缓存占用状态已改变，请稍后重试');
  }
  async function release(target=lease){if(!target)return;if(lease===target)lease=null;try{const v=JSON.parse(await fs.readFile(target.file,'utf8'));if(v.id===target.lockId&&v.pid===process.pid)await fs.unlink(target.file);}catch(e){if(e.code!=='ENOENT')throw e;}heldLeases.delete(target.managed);}
  async function ensureLease(createIfMissing){const cache=await managedAt(root,createIfMissing);if(!cache)return null;await acquire(cache);owned=cache;return cache;}

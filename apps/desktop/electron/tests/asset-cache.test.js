@@ -10,7 +10,7 @@ if(script==='decode_film_audio.py'){let d=get('--root');fs.mkdirSync(path.join(d
 if(script==='decode_film_unity_audio.py'){let d=get('--root');fs.writeFileSync(path.join(d,'audio-unity-summary.json'),JSON.stringify({files:0,errors:0,skippedForSpace:0}));fs.writeFileSync(path.join(d,'audio-unity.jsonl'),'');}`;
 async function setup(){const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'creator-assets-test-'))),game=path.join(root,'game'),dataRoot=path.join(root,'data'),scripts=path.join(root,'scripts'),chosen=path.join(root,'chosen');for(const d of [game,dataRoot,scripts,chosen])await fs.mkdir(d);for(const n of ['inventory.py','prepare_film_assets.py','decode_film_audio.py','decode_film_unity_audio.py','player_cache.py'])await fs.writeFile(path.join(scripts,n),fake);await fs.writeFile(path.join(game,'untouched'),'game');await fs.mkdir(path.join(game,'octo','pdb'),{recursive:true});await fs.writeFile(path.join(game,'octo','pdb','octocacheevai'),'fixture');await fs.mkdir(path.join(dataRoot,'projects'));await fs.writeFile(path.join(dataRoot,'projects','valuable.wav'),'voice');const gameDirectory={async status(){return {state:'valid',path:game}}};const activated=[];const manager=create({dataRoot,gameDirectory,python:process.execPath,scripts,prefixArgs:[],effectScript:null,sceneScript:null,playerScript:null,onActivate:async x=>activated.push(x)});return {root,game,dataRoot,scripts,chosen,manager,activated,gameDirectory};}
 async function until(manager){for(let i=0;i<400;i++){const info=await manager.info();if(!['running','idle'].includes(info.job.state))return info.job;await new Promise(r=>setTimeout(r,20));}throw Error('timed out');}
-test('已有占用标记时仍可统计，但保留标记并拒绝清理和解包',async()=>{
+test('保留活跃实例的占用；Windows 安全恢复已退出实例的标记',async()=>{
  const x=await setup();let reader;
  try{
   await x.manager.configure(x.chosen);await x.manager.start();assert.equal((await until(x.manager)).state,'complete');
@@ -23,8 +23,11 @@ test('已有占用标记时仍可统计，但保留标记并拒绝清理和解�
   await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve);});
   const stale=JSON.stringify({pid:child.pid,id:require('node:crypto').randomUUID()});await fs.writeFile(lock,stale,{flag:'wx'});
   reader=create({dataRoot:x.dataRoot,gameDirectory:x.gameDirectory,sceneScript:null});
-  assert.deepEqual(await reader.stats(),expected);await assert.rejects(reader.clear(),/异常退出/);await assert.rejects(reader.start(),/异常退出/);
-  await reader.close();reader=null;assert.equal(await fs.readFile(lock,'utf8'),stale);
+  assert.deepEqual(await reader.stats(),expected);
+  if(process.platform==='win32'){
+   assert.equal((await reader.info()).warning,'');const recovered=JSON.parse(await fs.readFile(lock,'utf8'));assert.equal(recovered.pid,process.pid);assert.notEqual(recovered.id,JSON.parse(stale).id);
+   await reader.close();reader=null;await assert.rejects(fs.access(lock));
+  }else{await assert.rejects(reader.clear(),/无法安全核对/);await reader.close();reader=null;assert.equal(await fs.readFile(lock,'utf8'),stale);}
   assert.equal(await fs.readFile(path.join(x.game,'untouched'),'utf8'),'game');
  }finally{await reader?.close().catch(()=>{});await x.manager.close().catch(()=>{});await fs.rm(x.root,{recursive:true,force:true});}
 });
