@@ -7,7 +7,9 @@ async function recover(managed,previous){
  const executable=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
  let result;
  try{
-  const {stdout}=await run(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'recover-cache-lease.ps1'),'-ManagedPath',managed,'-ExpectedPid',String(previous.pid),'-ExpectedId',previous.id,'-RequesterPid',String(process.pid)],{windowsHide:true,timeout:20000,maxBuffer:16384});
+  const command='& $env:GSS_LEASE_SCRIPT -ManagedPath $env:GSS_LEASE_PATH -ExpectedPid $env:GSS_LEASE_PID -ExpectedId $env:GSS_LEASE_ID -RequesterPid $env:GSS_LEASE_REQUESTER';
+  const operation=run(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',Buffer.from(command,'utf16le').toString('base64')],{windowsHide:true,timeout:20000,maxBuffer:16384,env:{...process.env,GSS_LEASE_SCRIPT:path.join(__dirname,'recover-cache-lease.ps1'),GSS_LEASE_PATH:managed,GSS_LEASE_PID:String(previous.pid),GSS_LEASE_ID:previous.id,GSS_LEASE_REQUESTER:String(process.pid)}});
+  operation.child.stdin.end();const {stdout}=await operation;
   result=JSON.parse(stdout.trim());
  }catch(cause){throw Error('无法确认缓存是否仍被使用，已保留占用标记，请稍后重试',{cause});}
  if(['recovered','changed','missing'].includes(result.state))return result;

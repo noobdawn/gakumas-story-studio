@@ -2,8 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process'),{once}=require('node:events');
 const {recover}=require('../cache-lease');
 const windows={skip:process.platform!=='win32'};
-async function fixture(){
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'gss-lease-test-'));
+async function fixture(parent=os.tmpdir()){
+ const root=await fs.mkdtemp(path.join(parent,'gss-缓存-test-'));
  await fs.writeFile(path.join(root,'.creator-asset-cache.json'),JSON.stringify({format:'gakumas-creator-asset-cache',version:1,id:crypto.randomUUID()}));
  await fs.writeFile(path.join(root,'keep.bundle'),'cache data');
  const child=spawn(process.execPath,['-e',''],{windowsHide:true});await once(child,'exit');
@@ -41,4 +41,7 @@ test('orphaned descendants prevent recovery even without the cache path in argv'
 });
 test('unreadable lease content is retained',windows,async()=>{
  const x=await fixture();try{await fs.writeFile(x.file,'broken');await assert.rejects(recover(x.root,x.previous),/无法确认/);assert.equal(await fs.readFile(x.file,'utf8'),'broken');}finally{await x.close();}
+});
+test('recovery works on the workspace volume and Unicode path',windows,async()=>{
+ const x=await fixture(__dirname);try{assert.equal((await recover(x.root,x.previous)).state,'recovered');await assert.rejects(fs.access(x.file));}finally{await x.close();}
 });

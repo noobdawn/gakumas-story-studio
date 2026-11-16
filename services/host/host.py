@@ -28,6 +28,41 @@ REQUIRED = ('shader', 'actor-shader', 'm_fdc', 'mdl_chr_ttmr-casl-0002_body',
 FACE_NAME = re.compile(r'b_(?:brow|eye|iris|mouth)\.[a-z]+_\d{3}')
 
 
+class PreviewRequestHandler(http.server.BaseHTTPRequestHandler):
+    # Preview sends a state every frame. HTTP/1.0 creates a fresh TCP socket
+    # each time and can exhaust Windows ephemeral ports during playback.
+    protocol_version = 'HTTP/1.1'
+    timeout = 30
+    disable_nagle_algorithm = True
+
+    def read_json(self, limit):
+        # Reject framing we cannot consume before allowing connection reuse.
+        try:
+            lengths = self.headers.get_all('Content-Length', [])
+            if self.headers.get('Transfer-Encoding') is not None or len(lengths) != 1 or not re.fullmatch(r'[0-9]+', lengths[0]):
+                raise ValueError('invalid length')
+            size = int(lengths[0])
+            if not 0 < size <= limit:
+                raise ValueError('invalid length')
+            data = self.rfile.read(size)
+            if len(data) != size:
+                raise ValueError('incomplete request body')
+        except Exception:
+            self.close_connection = True
+            raise
+        return json.loads(data)
+
+    def send_json(self, reply, status=200):
+        data = json.dumps(reply, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        if self.close_connection:
+            self.send_header('Connection', 'close')
+        self.end_headers()
+        self.wfile.write(data)
+
+
 def media_request_parts(request_path, prefix):
     """Validate a media URL while ignoring its cache-busting query string."""
     if not isinstance(request_path, str) or not request_path.startswith(prefix): return None
@@ -344,7 +379,7 @@ def main():
             stopping = threading.Event()
             export_job = None
             export_dir = None
-            class Handler(http.server.BaseHTTPRequestHandler):
+            class Handler(PreviewRequestHandler):
                 def log_message(self, *unused): pass
                 def do_GET(self):
                     if self.path == '/' + token + '/costumes':
@@ -442,9 +477,7 @@ def main():
                     if self.path != '/' + token + '/' + endpoint or endpoint not in ('state', 'thumbnail', 'capture', 'bounds', 'shutdown', 'export-start', 'export-frame', 'export-finish', 'export-cancel', 'audio-effects') or self.headers.get('Origin') != origin:
                         return self.send_error(403)
                     try:
-                        size = int(self.headers.get('Content-Length', '0'))
-                        if not 0 < size <= (2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint=='state' else 20000): raise ValueError('invalid length')
-                        message = json.loads(self.rfile.read(size))
+                        message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint=='state' else 20000)
                         if endpoint == 'state':
                             dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
                             message['token'] = token
@@ -515,13 +548,11 @@ def main():
                             reply = {'ok': True}
                             stopping.set()
                             threading.Thread(target=server.shutdown, daemon=True).start()
-                        response = json.dumps(reply).encode()
-                        self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(response))); self.end_headers(); self.wfile.write(response)
+                        self.send_json(reply)
                     except Exception as e:
                         # All POST endpoints are JSON APIs. Preserve the actual
                         # failure instead of hiding it behind an HTML parse error.
-                        response=json.dumps({'ok':False,'error':str(e)},ensure_ascii=False).encode('utf-8')
-                        self.send_response(502);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(response)));self.end_headers();self.wfile.write(response)
+                        self.send_json({'ok':False,'error':str(e)},502)
             server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             origin = 'http://127.0.0.1:' + str(server.server_port)
             url = origin + '/' + token + '/ui/?' + ('embedded=1&' if embedded else '') + ('performance=1' if performance else 'performance=0') + ('&settings=1' if global_settings else '&settings=0') + ('&assets=1' if asset_features else '&assets=0') + ('&costumes=1' if costume_capable else '&costumes=0') + ('&costumePhysics=1' if (player.parent/'creator-costume-physics-v1').is_file() else '&costumePhysics=0') + ('&hairPhysics=1' if (player.parent/'creator-hair-physics-v1').is_file() else '&hairPhysics=0') + ('&arrangement=1' if arrangement else '&arrangement=0') + ('&editorGizmo=1' if editor_gizmo else '&editorGizmo=0') + ('&gizmoTrs=1' if gizmo_trs else '&gizmoTrs=0') + ('&editorGizmoTest=1' if editor_gizmo and os.environ.get('CREATOR_TEST_INSTANCE')=='1' and os.environ.get('CREATOR_GIZMO_TEST')=='1' else '&editorGizmoTest=0') + ('&dialogueStyles=1' if dialogue_styles else '&dialogueStyles=0') + ('&gameDialogue=1' if game_dialogue else '&gameDialogue=0') + ('&dialogueColors=1' if (player.parent/'creator-dialogue-colors-v1').is_file() else '&dialogueColors=0') + ('&faces=1' if faces else '&faces=0') + ('&faceDecals=1' if face_decals else '&faceDecals=0') + ('&roundEyes=1' if round_eyes else '&roundEyes=0') + ('&headEffects=1' if head_effects else '&headEffects=0') + ('&eyeMaterials=1' if eye_materials else '&eyeMaterials=0') + ('&eyeBones=1' if eye_bones else '&eyeBones=0') + ('&export=1' if export_capable else '&export=0') + ('&idle=1' if idle_capable else '&idle=0') + ('&motionBlend=1' if blend_capable else '&motionBlend=0') + ('&uiTransitions=2' if ui_graph_capable else '&uiTransitions=1' if ui_capable else '&uiTransitions=0') + ('&animationLayers=1' if layers_capable else '&animationLayers=0') + ('&classroomChairs=1' if prop_capable else '&classroomChairs=0') + ('&classroomProps=1' if generic_props else '&classroomProps=0') + ('&renderSettings=1' if (player.parent/'creator-render-settings-v1').is_file() else '&renderSettings=0') + ('&screenMedia=1' if (player.parent/'creator-screen-media-v1').is_file() else '&screenMedia=0') + ('&postEffects=1' if (player.parent/'creator-post-effects-v1').is_file() else '&postEffects=0') + ('&composition=1' if (player.parent/'creator-composition-v1').is_file() else '&composition=0') + '&actors=' + ','.join(actor_codes) + '&missingShapes=' + quote(','.join(missing_shapes),safe=',:') + '&faceNames=' + quote(','.join(face_names), safe=',') + '&scenes=' + ','.join(available_scenes) + '&motions=' + ','.join(available_motions)

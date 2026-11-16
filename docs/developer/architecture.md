@@ -2,6 +2,8 @@
 
 Electron 管理窗口、文件选择与本机设置。Python 提供本机 HTTP/TCP 协调、资产准备和音视频处理。Unity 负责确定性演出采样及最终画面。前端预览和导出共用工程参数、演出时钟和效果类型契约。
 
+工作台到 Python 的本机 HTTP 使用 HTTP/1.1 持久连接，各响应带 Content-Length，避免逐帧创建 TCP 短连接。连接空闲 30 秒退出；禁用 Nagle，避免小型同步响应的额外延迟。请求体大小限制、Origin 与会话令牌校验仍保留；不支持的传输编码、重复／非法长度或不完整请求体会关闭连接，避免剩余字节被解析为下一条请求。完整读入后的 JSON／业务错误正常返回 JSON，可继续复用连接。Python 到 Unity 仍为原有鉴权 TCP 长连接。
+
 runtime-paths.js 与 runtime_paths.py 从程序所在位置解析源码与运行时。默认数据位于 LOCALAPPDATA/GakumasStoryStudio；CREATOR_LIBRARY_DIR 可显式指定旧库。数据目录选择记在独立 location.json；不把个人路径编入公开代码。
 
 通用预设位于 resources/common，按修订一次性安装到 shared；用户修改和主动删除不被覆盖。游戏资源位于当前受管理批次，缺失时返回初始化/准备入口，不从历史报告或其他批次补齐。
