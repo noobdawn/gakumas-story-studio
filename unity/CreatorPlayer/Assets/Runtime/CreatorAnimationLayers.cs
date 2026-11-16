@@ -39,6 +39,8 @@ public sealed class CreatorAnimationLayers : IDisposable {
   // Downloaded body clips use humanoid muscle bindings; generic face curves are handled separately.
   mask.transformCount=0;return mask;
  }
+ // Release the previous base before callers reconnect its clips into a blend.
+ public void DetachBase(){if(mixer.GetInput(0).IsValid())graph.Disconnect(mixer,0);}
  public void Evaluate(AnimationPlayableOutput output,Playable baseMotion,CreatorMotionLayer[] requested,Func<string,AnimationClip> resolve,Func<string,bool> nativeAdditive){
   requested=requested??Array.Empty<CreatorMotionLayer>();Validate(requested);
   string next=string.Join("|",requested.Select(x=>x.id+":"+x.motionId+":"+x.scope+":"+x.additive));
@@ -59,7 +61,7 @@ public sealed class CreatorAnimationLayers : IDisposable {
    }
    signature=next;
   }
-  if(mixer.GetInput(0).IsValid())graph.Disconnect(mixer,0);
+  DetachBase();
   graph.Connect(baseMotion,0,mixer,0);mixer.SetInputWeight(0,1);
   for(int i=0;i<requested.Length;i++){nodes[i].SetTime(requested[i].time);mixer.SetInputWeight(i+1,requested[i].weight);}
   output.SetSourcePlayable(mixer);graph.Evaluate(0);

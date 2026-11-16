@@ -18,6 +18,7 @@ public static class CreatorBuild {
   int exitCode=1;
   try {
    CreatorDedicatedEffectsTests.Run();
+   CreatorMotionTransitionTests.Run();
    if(PlayerSettings.colorSpace!=ColorSpace.Linear) throw new Exception("Expected Linear color space; refusing to change project setting");
    PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64,false);
    PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneWindows64,new[]{GraphicsDeviceType.Direct3D11});

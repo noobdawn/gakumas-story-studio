@@ -277,7 +277,7 @@ public class CreatorPrototypePlayer : MonoBehaviour {
    if(independent && copyGraphs.TryGetValue(a.id,out var actorGraph)) { var motionId=MotionChoice(a.motionActive,a.motionId,a.idleMotionId);EnsureMotion(motionId);if(!copyMotions[a.id].TryGetValue(motionId,out var actorMotion)){actorMotion=CreateMotionPlayable(actorGraph,motionClips[motionId]);copyMotions[a.id].Add(motionId,actorMotion);}var actorClip=motionClips[motionId];copyOutputs[a.id].SetSourcePlayable(actorMotion);float target=MotionPosition(a.motionActive,a.motionTime,a.idleMotionTime,actorClip);
     AnimationClipPlayable prior=default;bool blend=!physicsEnabled&&a.blendActive&&!a.motionActive&&a.blendMotionId!=motionId;
     if(blend){EnsureMotion(a.blendMotionId);if(!copyMotions[a.id].TryGetValue(a.blendMotionId,out prior)){prior=CreateMotionPlayable(actorGraph,motionClips[a.blendMotionId]);copyMotions[a.id].Add(a.blendMotionId,prior);}}
-    void Evaluate(float t){if(blend)SampleBlended(actorGraph,copyOutputs[a.id],copyMixers[a.id],actorMotion,t,prior,a.blendMotionTime,a.blendWeight);else{copyOutputs[a.id].SetSourcePlayable(actorMotion);actorMotion.SetTime(t);}copyLayers[a.id].Evaluate(copyOutputs[a.id],blend?(Playable)copyMixers[a.id]:(Playable)actorMotion,a.motionLayers,ResolveLayerClip,IsNativeAdditive);}
+    void Evaluate(float t){copyLayers[a.id].DetachBase();if(blend)SampleBlended(actorGraph,copyOutputs[a.id],copyMixers[a.id],actorMotion,t,prior,a.blendMotionTime,a.blendWeight);else{ClearBlend(actorGraph,copyMixers[a.id]);copyOutputs[a.id].SetSourcePlayable(actorMotion);actorMotion.SetTime(t);}copyLayers[a.id].Evaluate(copyOutputs[a.id],blend?(Playable)copyMixers[a.id]:(Playable)actorMotion,a.motionLayers,ResolveLayerClip,IsNativeAdditive);}
     if(copyPhysics.TryGetValue(a.id,out var cp)){
      bool quiet=code=="ttmr"&&(costume==null||costume.name=="mdl_chr_ttmr-casl-0002_body")&&!a.motionActive&&actorClip.name==QuietIdle;float skirtLimit=quiet?2f:-1f;foreach(var solver in cp.solvers.Where(x=>x.gameObject==clone)){if(solver.skirtMaxAngle!=skirtLimit){solver.skirtMaxAngle=skirtLimit;cp.time=-1;}}
      if(physicsEnabled){if(!cp.enabled||cp.motionId!=motionId||cp.time<0||target<cp.time||target-cp.time>.25f){foreach(var solver in cp.solvers)solver.ResetSimulation();cp.time=Mathf.Max(0,target-.5f);Evaluate(cp.time);for(int i=0;i<30;i++)foreach(var solver in cp.solvers)solver.Step(1f/60f);}while(cp.time+1f/60f<=target+.00001f){cp.time+=1f/60f;Evaluate(cp.time);foreach(var solver in cp.solvers)solver.Step(1f/60f);}}
@@ -417,10 +417,14 @@ public class CreatorPrototypePlayer : MonoBehaviour {
   if(mixer.GetInput(0).IsValid())g.Disconnect(mixer,0);if(mixer.GetInput(1).IsValid())g.Disconnect(mixer,1);
   g.Connect(current,0,mixer,0);g.Connect(previous,0,mixer,1);mixer.SetInputWeight(0,1-previousWeight);mixer.SetInputWeight(1,previousWeight);current.SetTime(currentTime);previous.SetTime(previousTime);output.SetSourcePlayable(mixer);
  }
+ // An inactive mixer must release its inputs. Reusing a humanoid playable while
+ // it is still connected makes the next graph connection fail, leaving the
+ // Humanoid pose without its body translation despite a fixed outer Transform.
+ static void ClearBlend(PlayableGraph g,AnimationMixerPlayable mixer){for(int i=0;i<mixer.GetInputCount();i++)if(mixer.GetInput(i).IsValid())g.Disconnect(mixer,i);}
  static bool ValidBlend(bool active,string id,float t,float weight)=>!active||(!string.IsNullOrEmpty(id)&&id.Length<=180&&!float.IsNaN(t)&&!float.IsInfinity(t)&&t>=0&&t<=3600&&!float.IsNaN(weight)&&!float.IsInfinity(weight)&&weight>=0&&weight<=1);
  AnimationClip ResolveLayerClip(string id){EnsureMotion(id);return motionClips[id];}
  bool IsNativeAdditive(string id)=>filmMotions.TryGetValue(id,out var entry)&&entry.isAdditive;
- void Sample(float t) {t=Mathf.Clamp(t,0,clip.length);if(mainBlendActive)SampleBlended(graph,mainOutput,mainMixer,motion,t,mainMotions[mainBlendId],mainBlendTime,mainBlendWeight);else{mainOutput.SetSourcePlayable(motion);motion.SetTime(t);}mainLayers.Evaluate(mainOutput,mainBlendActive?(Playable)mainMixer:(Playable)motion,mainLayerState,ResolveLayerClip,IsNativeAdditive); }
+ void Sample(float t) {t=Mathf.Clamp(t,0,clip.length);mainLayers.DetachBase();if(mainBlendActive)SampleBlended(graph,mainOutput,mainMixer,motion,t,mainMotions[mainBlendId],mainBlendTime,mainBlendWeight);else{ClearBlend(graph,mainMixer);mainOutput.SetSourcePlayable(motion);motion.SetTime(t);}mainLayers.Evaluate(mainOutput,mainBlendActive?(Playable)mainMixer:(Playable)motion,mainLayerState,ResolveLayerClip,IsNativeAdditive); }
  void ApplyMotion(Command c) {
   CreatorAnimationLayers.Validate(c.motionLayers);mainLayerState=c.motionLayers;
   if(!graph.IsValid()) { if(c.motionActive||c.physicsEnabled) throw new Exception("Local motion or physics resources unavailable"); return; }
