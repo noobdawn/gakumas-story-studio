@@ -33,3 +33,17 @@ temporarily in an unoccupied Unity project, build a new Player and remove the
 staged DLL. No game resources or private configuration are bundled. The
 `creator-gpu-export-v1` capability marker is emitted only if the DLL is present
 in the built Player. The first round does not enable GPU export in normal UI.
+
+For a controlled frame-cap A/B, launch a fresh hidden test instance with
+`CREATOR_TEST_INSTANCE=1` and `CREATOR_DIAGNOSTIC_UNCAPPED=1`. Only that test
+Player uses `Application.targetFrameRate=-1`; other sessions retain 60.
+The override lasts for the test process, including pre-roll and preparation.
+Export timing snapshots report `targetFrameRate` and `vSyncCount` so the
+runner can verify the actual mode. No render, sampling or encoding setting
+is changed by this switch. It is not a normal export preference.
+
+The local 2026-11-17 A/B found much shorter loop waits, but uncapped 3D runs
+also suffered long submission-acknowledgement stalls. Decoded frames and
+audio matched the capped outputs. Do not infer stable throughput from the
+fastest sample or enable this as a production default without resolving
+those stalls and validating longer exports.

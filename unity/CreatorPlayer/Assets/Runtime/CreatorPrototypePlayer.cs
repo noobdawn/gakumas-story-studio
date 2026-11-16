@@ -119,7 +119,9 @@ public class CreatorPrototypePlayer : MonoBehaviour {
    output=Path.GetFullPath(Arg("-creator-output")); string root=Path.GetFullPath(Arg("-creator-bundles"));bundleRoot=root; token=Arg("-creator-token");swingDir=OptionalArg("-creator-swing-dir");hairSwingDir=OptionalArg("-creator-hair-swing-dir");
    if(SystemInfo.graphicsDeviceType!=GraphicsDeviceType.Direct3D11)throw new Exception("当前原始资源渲染只支持 Direct3D 11，请通过新版创作器启动。实际图形后端："+SystemInfo.graphicsDeviceType);
    string dialogueDir=OptionalArg("-creator-dialogue-assets");if(!string.IsNullOrEmpty(dialogueDir)){dialogueBackground=LoadTexture(Path.Combine(dialogueDir,"message_bg.png"));dialogueFrame=LoadTexture(Path.Combine(dialogueDir,"frame_message_bg.png"));dialogueName=LoadTexture(Path.Combine(dialogueDir,"name_bg.png"));}
-   Application.runInBackground=true; Application.targetFrameRate=60; QualitySettings.vSyncCount=0;
+   // A/B probe only: keep normal sessions at 60; the hidden test process owns this override.
+   bool uncappedProbe=Environment.GetEnvironmentVariable("CREATOR_TEST_INSTANCE")=="1"&&Environment.GetEnvironmentVariable("CREATOR_DIAGNOSTIC_UNCAPPED")=="1";
+   Application.runInBackground=true; Application.targetFrameRate=uncappedProbe?-1:60; QualitySettings.vSyncCount=0;
    if(actorPipeline) {
     GraphicsSettings.defaultRenderPipeline=actorPipeline; QualitySettings.renderPipeline=actorPipeline;
     RenderSettings.ambientMode=AmbientMode.Flat; RenderSettings.ambientLight=Color.black;
