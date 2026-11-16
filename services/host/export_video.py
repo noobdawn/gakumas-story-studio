@@ -1,5 +1,7 @@
 """Experimental offline MP4 encoder; frame images are supplied by the Unity Player."""
 import math
+import time
+from export_diagnostics import sample_range, validate_profile
 import hashlib
 import json
 import os
@@ -201,6 +203,12 @@ class VideoExport:
         self.fps=config.get('fps'); self.width=config.get('width'); self.height=config.get('height')
         if self.fps not in (24,25,30,60) or type(self.width) is not int or type(self.height) is not int or not (16<=self.width<=1920 and 16<=self.height<=1920 and self.width%2==0 and self.height%2==0): raise ValueError('Invalid output dimensions or frame rate')
         self.duration=number(config.get('duration'),1,3600); self.frames=math.ceil(self.duration*self.fps); self.count=0
+        self.profile=validate_profile(config.get("profileExport",False));self.last_write_ms=0
+        run_id=config.get('runId','')
+        if not isinstance(run_id,str) or len(run_id)>80 or (run_id and not re.fullmatch(r'[0-9A-Za-z_-]+',run_id)): raise ValueError('诊断运行标识无效')
+        self.run_id=run_id
+        self.start_frame,self.end_frame=sample_range(config,self.frames,self.native_post)
+        self.frames=self.end_frame-self.start_frame
         output=Path(config.get('output',''))
         if not output.is_absolute() or output.suffix.lower()!='.mp4' or not output.parent.is_dir(): raise ValueError('视频保存位置无效')
         parent=output.parent.resolve(); assert_video_destination(parent,self.root)
@@ -308,7 +316,8 @@ class VideoExport:
                 filters.append(f'[{video_label}]ass=captions.ass[v]');args+=['-map','[v]']
             else: args+=['-map','0:v:0']
             if audio_labels:
-                filters.append(''.join(audio_labels)+f'amix=inputs={len(audio_labels)}:normalize=0:duration=longest,apad,atrim=duration={self.frames/self.fps:.9f}[a]');args+=['-map','[a]','-c:a','aac','-b:a','192k']
+                trim=(f'atrim=start={self.start_frame/self.fps:.9f}:end={self.end_frame/self.fps:.9f},asetpts=N/SR/TB' if config.get('diagnosticRange') is not None else f'atrim=duration={self.frames/self.fps:.9f}')
+                filters.append(''.join(audio_labels)+f'amix=inputs={len(audio_labels)}:normalize=0:duration=longest,apad,{trim}[a]');args+=['-map','[a]','-c:a','aac','-b:a','192k']
             if filters:
                 (self.directory/'filter.txt').write_text(';'.join(filters),encoding='utf-8');args+=['-filter_complex_script','filter.txt']
             if self.native_ui:
@@ -329,7 +338,9 @@ class VideoExport:
                 file=self.directory/('ui-'+digest+'.png');file.write_bytes(ui_image);self.ui_files[digest]=file
             self.ui_frames.append(digest)
         if self.proc.poll() is not None: raise RuntimeError('FFmpeg 编码失败：'+self.error())
-        try: self.proc.stdin.write(image);self.count+=1
+        try:
+            start=time.perf_counter();self.proc.stdin.write(image);self.count+=1
+            if self.profile:self.last_write_ms=(time.perf_counter()-start)*1000
         except (BrokenPipeError,OSError) as e: raise RuntimeError('FFmpeg 编码失败：'+self.error()) from e
     def error(self):
         if self.log:self.log.flush()

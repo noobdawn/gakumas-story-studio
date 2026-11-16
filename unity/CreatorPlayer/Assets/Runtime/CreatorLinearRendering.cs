@@ -101,14 +101,30 @@ public sealed class CreatorLinearRendering : IDisposable {
         if(fallbackLight)fallbackLight.enabled=!sceneLight||is2D||!visible;
         camera.clearFlags=!is2D&&visible&&sceneLight?CameraClearFlags.Skybox:CameraClearFlags.SolidColor;
     }
-    public static Texture2D ReadDisplay(RenderTexture rt) {
-        var old=RenderTexture.active;Texture2D linear=null;
+    public static Texture2D ReadDisplay(RenderTexture rt, bool gpuColor=false) {
+        var old=RenderTexture.active;
+        if(gpuColor) {
+            RenderTexture converted=null;Texture2D image=null;var oldSrgb=GL.sRGBWrite;
+            try {
+                // GPU hardware sRGB encoding into an 8-bit target; keep the PNG
+                // exit unchanged so this path can be compared independently.
+                converted=RenderTexture.GetTemporary(rt.width,rt.height,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.sRGB);
+                converted.filterMode=FilterMode.Point;
+                using(CreatorExportProfiler.Measure("gpuConvertMs")){GL.sRGBWrite=true;Graphics.Blit(rt,converted);}
+                RenderTexture.active=converted;
+                image=new Texture2D(rt.width,rt.height,TextureFormat.RGBA32,false,true);
+                using(CreatorExportProfiler.Measure("readPixels8Ms"))image.ReadPixels(new Rect(0,0,rt.width,rt.height),0,0);
+                using(CreatorExportProfiler.Measure("apply8Ms"))image.Apply();
+                return image;
+            }finally{GL.sRGBWrite=oldSrgb;RenderTexture.active=old;if(converted)RenderTexture.ReleaseTemporary(converted);}
+        }
+        Texture2D linear=null;
         try {
-            RenderTexture.active=rt;linear=new Texture2D(rt.width,rt.height,TextureFormat.RGBAFloat,false,true);
-            linear.ReadPixels(new Rect(0,0,rt.width,rt.height),0,0);linear.Apply();
-            var pixels=linear.GetPixels();
-            for(int i=0;i<pixels.Length;i++){var p=pixels[i];pixels[i]=new Color(Mathf.LinearToGammaSpace(p.r),Mathf.LinearToGammaSpace(p.g),Mathf.LinearToGammaSpace(p.b),p.a);}
-            var result=new Texture2D(rt.width,rt.height,TextureFormat.RGB24,false);result.SetPixels(pixels);result.Apply();return result;
+            RenderTexture.active=rt;using(CreatorExportProfiler.Measure("floatTextureMs"))linear=new Texture2D(rt.width,rt.height,TextureFormat.RGBAFloat,false,true);
+            using(CreatorExportProfiler.Measure("readPixelsMs"))linear.ReadPixels(new Rect(0,0,rt.width,rt.height),0,0);using(CreatorExportProfiler.Measure("floatApplyMs"))linear.Apply();
+            Color[] pixels;using(CreatorExportProfiler.Measure("getPixelsMs"))pixels=linear.GetPixels();
+            using(CreatorExportProfiler.Measure("gammaMs")){for(int i=0;i<pixels.Length;i++){var p=pixels[i];pixels[i]=new Color(Mathf.LinearToGammaSpace(p.r),Mathf.LinearToGammaSpace(p.g),Mathf.LinearToGammaSpace(p.b),p.a);}}
+            Texture2D result;using(CreatorExportProfiler.Measure("rgbTextureMs")){result=new Texture2D(rt.width,rt.height,TextureFormat.RGB24,false);result.SetPixels(pixels);}using(CreatorExportProfiler.Measure("rgbApplyMs"))result.Apply();return result;
         }finally{RenderTexture.active=old;if(linear)UnityEngine.Object.Destroy(linear);}
     }
     public void Dispose(){sceneFeature.SetActive(false);sceneFeature.ReleaseTargets();if(volume)UnityEngine.Object.Destroy(volume.gameObject);if(profile)UnityEngine.Object.Destroy(profile);}

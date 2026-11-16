@@ -1,3 +1,8 @@
+import sys
+from pathlib import Path
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 import runtime_paths
 import dedicated_effects
 """Local research host: browser UI -> authenticated loopback TCP -> Unity Player."""
@@ -47,6 +52,7 @@ class PreviewRequestHandler(http.server.BaseHTTPRequestHandler):
             data = self.rfile.read(size)
             if len(data) != size:
                 raise ValueError('incomplete request body')
+            self._request_bytes = size
         except Exception:
             self.close_connection = True
             raise
@@ -473,19 +479,27 @@ def main():
                     self.end_headers(); self.wfile.write(data)
                 def do_POST(self):
                     nonlocal export_job, export_dir
+                    request_start = time.perf_counter()
                     endpoint = self.path.removeprefix('/' + token + '/')
                     if self.path != '/' + token + '/' + endpoint or endpoint not in ('state', 'thumbnail', 'capture', 'bounds', 'shutdown', 'export-start', 'export-frame', 'export-finish', 'export-cancel', 'audio-effects') or self.headers.get('Origin') != origin:
                         return self.send_error(403)
                     try:
                         message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint=='state' else 20000)
+                        parsed_at = time.perf_counter()
                         if endpoint == 'state':
+                            profiling = message.get('profileExport') is True
+                            if profiling and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                             dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
                             message['token'] = token
                             message['mediaDraws'] = visual_media.resolve_draws(library_root,message.get('mediaDraws',[]))
                             data = (json.dumps(message, allow_nan=False, separators=(',', ':')) + '\n').encode()
+                            prepared_at = time.perf_counter()
                             with lock:
+                                locked_at = time.perf_counter()
                                 conn.sendall(data)
                                 reply = json.loads(stream.readline(4097))
+                            if profiling:
+                                reply['hostTiming'] = dict(requestBytes=getattr(self,'_request_bytes',0),parseMs=(parsed_at-request_start)*1000,prepareMs=(prepared_at-parsed_at)*1000,lockMs=(locked_at-prepared_at)*1000,unityRoundtripMs=(time.perf_counter()-locked_at)*1000)
                         elif endpoint == 'audio-effects':
                             key,_=audio_effects.prepare(library_root,message)
                             reply={'ok':True,'key':key}
@@ -513,6 +527,7 @@ def main():
                                     reply['dataUrl']='data:image/png;base64,'+base64.b64encode(content).decode('ascii')
                         elif endpoint == 'export-start':
                             if not export_capable or export_job is not None: raise ValueError('导出不可用或已在进行')
+                            if message.get('profileExport') is True and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                             from export_video import VideoExport
                             export_dir=tempfile.TemporaryDirectory(prefix='export-',dir=output)
                             message['nativePostEffects'] = message.get('nativePostEffects') is True
@@ -522,14 +537,31 @@ def main():
                             try: export_job=VideoExport(message,library_root,export_dir.name,args.dialogue_assets if game_dialogue else None)
                             except Exception:
                                 export_dir.cleanup();export_dir=None;raise
-                            reply={'ok':True,'frames':export_job.frames}
+                            reply={'ok':True,'frames':export_job.frames,'startFrame':export_job.start_frame,'runId':export_job.run_id,'profile':export_job.profile}
                         elif endpoint == 'export-frame':
                             if export_job is None or message.get('index')!=export_job.count: raise ValueError('帧顺序无效')
                             request={'token':token,'id':message.get('id',0),'kind':'frame','frameWidth':export_job.width,'frameHeight':export_job.height,'captureUiLayer':export_job.native_ui,'includeUiOverlay':export_job.native_post}
+                            request.update(profileExport=export_job.profile,frameIndex=export_job.start_frame+export_job.count,runId=export_job.run_id,skipPreRender=message.get('skipPreRender') is True,gpuColor=message.get('gpuColor') is True)
+                            prepared_at = time.perf_counter()
                             with lock:
+                                locked_at = time.perf_counter()
                                 conn.sendall((json.dumps(request,separators=(',', ':'))+'\n').encode())
                                 reply=json.loads(stream.readline(4097))
-                                if reply.get('ok'): export_job.write((Path(output)/'export-frame.png').read_bytes(),(Path(output)/'export-ui.png').read_bytes() if export_job.native_ui else None)
+                                captured_at = time.perf_counter()
+                                if reply.get('ok'):
+                                    image=(Path(output)/'export-frame.png').read_bytes()
+                                    ui_image=(Path(output)/'export-ui.png').read_bytes() if export_job.native_ui else None
+                                    read_at=time.perf_counter()
+                                    export_job.write(image,ui_image)
+                                    if export_job.profile:
+                                        reply['hostTiming']=dict(lockMs=(locked_at-prepared_at)*1000,unityRoundtripMs=(captured_at-locked_at)*1000,fileReadMs=(read_at-captured_at)*1000,pipeWriteMs=export_job.last_write_ms,frameBytes=len(image),uiBytes=len(ui_image) if ui_image is not None else 0)
+                                    # Diagnostic samples retain only three lossless references, never all frames.
+                                    if message.get('referenceFrame') is True and export_job.new_only and export_job.frames<=300:
+                                        reference=export_job.output.with_suffix('.frame-'+str(request['frameIndex'])+'.png')
+                                        with reference.open('xb') as reference_file:reference_file.write(image)
+                                        reply['referenceFrame']=str(reference)
+                                    if message.get('frameDigest') is True and export_job.frames<=300:
+                                        reply['pngSha256']=hashlib.sha256(image).hexdigest()
                         elif endpoint == 'export-finish':
                             if export_job is None: raise ValueError('没有进行中的导出')
                             export_job.finish();export_job=None;export_dir.cleanup();export_dir=None;reply={'ok':True}

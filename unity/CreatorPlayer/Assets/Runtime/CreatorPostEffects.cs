@@ -60,13 +60,13 @@ public sealed class CreatorPostEffects:IDisposable {
  RenderTexture Coverage(Camera camera,RenderTexture full,List<Draw> draws,Color clear){var target=Make(full.width,full.height);var cmd=new CommandBuffer{name="Story actor coverage"};try{cmd.SetRenderTarget(new RenderTargetIdentifier(target),new RenderTargetIdentifier(full));cmd.ClearRenderTarget(false,true,clear);cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix,GL.GetGPUProjectionMatrix(camera.projectionMatrix,true));foreach(var d in draws)cmd.DrawRenderer(d.renderer,d.material,d.submesh,d.pass);Graphics.ExecuteCommandBuffer(cmd);}finally{cmd.Release();}return target;}
  public RenderTexture World(Camera camera,int w,int h,Renderer[] actors,Action fit){
   var old=camera.targetTexture;var previous=RenderTexture.active;var full=Make(w,h,24);var actorFlags=actors.Where(r=>r).Select(r=>(r,r.shadowCastingMode)).ToArray();
-  try{camera.targetTexture=full;fit();camera.Render();if(Layers("background").Length==0&&Layers("actors").Length==0)return full;
+  try{camera.targetTexture=full;fit();using(CreatorExportProfiler.Measure("worldRenderMs"))camera.Render();if(Layers("background").Length==0&&Layers("actors").Length==0)return full;
    // Take the coverage while native camera globals and original depth are current.
-   var draws=Draws(camera,actors);var black=Coverage(camera,full,draws,Color.black);var white=Coverage(camera,full,draws,Color.white);
+   var draws=Draws(camera,actors);RenderTexture black,white;using(CreatorExportProfiler.Measure("coverageMs")){using(CreatorExportProfiler.Measure("coverageRenderMs"))black=Coverage(camera,full,draws,Color.black);using(CreatorExportProfiler.Measure("coverageRenderMs"))white=Coverage(camera,full,draws,Color.white);}
    var background=Make(w,h,24);foreach(var flag in actorFlags)flag.r.shadowCastingMode=ShadowCastingMode.ShadowsOnly;
-   camera.targetTexture=background;fit();camera.Render();foreach(var flag in actorFlags)flag.r.shadowCastingMode=flag.shadowCastingMode;
+   camera.targetTexture=background;fit();using(CreatorExportProfiler.Measure("backgroundRenderMs"))camera.Render();foreach(var flag in actorFlags)flag.r.shadowCastingMode=flag.shadowCastingMode;
    var foreground=Make(w,h);material.SetTexture("_Background",background);material.SetTexture("_Black",black);material.SetTexture("_White",white);Graphics.Blit(full,foreground,material,2);
-   var processedBg=Apply(background,"background",w,h);var processedActor=Apply(foreground,"actors",w,h);var output=Make(w,h);material.SetTexture("_Clean",background);material.SetTexture("_Background",processedBg);material.SetTexture("_Actors",processedActor);material.SetTexture("_Black",black);material.SetTexture("_White",white);Graphics.Blit(full,output,material,3);return output;
+   Texture processedBg,processedActor;using(CreatorExportProfiler.Measure("worldFilterMs")){processedBg=Apply(background,"background",w,h);processedActor=Apply(foreground,"actors",w,h);}var output=Make(w,h);material.SetTexture("_Clean",background);material.SetTexture("_Background",processedBg);material.SetTexture("_Actors",processedActor);material.SetTexture("_Black",black);material.SetTexture("_White",white);Graphics.Blit(full,output,material,3);return output;
   }finally{foreach(var flag in actorFlags)if(flag.r)flag.r.shadowCastingMode=flag.shadowCastingMode;camera.targetTexture=old;fit();RenderTexture.active=previous;}
  }
  public void Dispose(){Clear();UnityEngine.Object.Destroy(material);}
