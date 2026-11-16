@@ -6,6 +6,8 @@ Electron 管理窗口、文件选择与本机设置。Python 提供本机 HTTP/T
 
 runtime-paths.js 与 runtime_paths.py 从程序所在位置解析源码与运行时。默认数据位于 LOCALAPPDATA/GakumasStoryStudio；CREATOR_LIBRARY_DIR 可显式指定旧库。数据目录选择记在独立 location.json；不把个人路径编入公开代码。
 
+离线视频编码按音频片段计算数量（最多 10,000），不将片段数当作轨道数。超过 32 个输入时按时间排序分组，去掉批次前的静音，在 48 kHz 双声道浮点 PCM 中混音；需要时继续分层合并，最终视频编码也最多接收 32 个音频输入。浮点中间结果不归一化、不提前削波，保留各段增益与时间位置；变速输出按样本重建时间戳。中间文件只在本次导出临时目录内，完成、取消或失败后清理。现有请求体大小、循环音频内存预算与输出覆盖保护仍生效。
+
 通用预设位于 resources/common，按修订一次性安装到 shared；用户修改和主动删除不被覆盖。游戏资源位于当前受管理批次，缺失时返回初始化/准备入口，不从历史报告或其他批次补齐。
 
 专用效果由 memory、television、soft 三套 shader include 与 pass 分派，演出时间驱动，保留 RenderStory 的 RT/sRGB try/finally 恢复。效果 v2 与旧通用包明确隔离；旧工程在副本中显式替换效果。

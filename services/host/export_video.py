@@ -8,11 +8,14 @@ import secrets
 import shutil
 import subprocess
 import struct
+import tempfile
 import zlib
 import wave
 from pathlib import Path
 
 UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.I)
+MAX_AUDIO_CLIPS = 10000
+AUDIO_BATCH_INPUTS = 32
 
 def number(x, minimum, maximum):
     if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or not minimum <= x <= maximum:
@@ -112,11 +115,57 @@ def audio_filter(index, start, length, offset, original_length, volume, fade_in,
     while remaining<.5:tempo.append('atempo=0.5');remaining/=.5
     while remaining>2:tempo.append('atempo=2');remaining/=2
     if rate!=1:tempo.append(f'atempo={remaining:.9f}')
+    # Rebase tempo output to its samples before mixing. Otherwise EOF timing
+    # depends on the surrounding mix graph and differs between batch levels.
     loop_filter=(f'aloop=loop=-1:start={original_loop[0]}:size={original_loop[1]-original_loop[0]},' if original_loop else 'aloop=loop=-1:size=2147483647,' if loop else '')
-    chain=f'[{index}:a]asetpts=PTS-STARTPTS,'+loop_filter+('asettb=1/sr,asetpts=N,' if loop else '')+f'atrim=start={offset:.9f}:duration={length*rate:.9f},asetpts=PTS-STARTPTS,'+(','.join(tempo)+',' if tempo else '')+f'volume={volume:.9f}'
+    chain=f'[{index}:a]asetpts=PTS-STARTPTS,'+loop_filter+('asettb=1/sr,asetpts=N,' if loop else '')+f'atrim=start={offset:.9f}:duration={length*rate:.9f},asetpts=PTS-STARTPTS,'+(','.join(tempo)+',asetpts=N/SR/TB,' if tempo else '')+f'volume={volume:.9f}'
     if fade_in: chain+=f',afade=t=in:st=0:d={fade_in:.9f}'
     if fade_out: chain+=f',afade=t=out:st={max(0,original_length-fade_out):.9f}:d={fade_out:.9f}'
     return chain+f',adelay={round(start*1000)}:all=1[a{index}]'
+
+def audio_graph(entries, first=1, origin=0):
+    args=[];filters=[];labels=[];memory=0
+    for index, entry in enumerate(entries,first):
+        memory=audio_loop_budget(entry['loop_cost'],memory)
+        args+=audio_input_args(entry['file'],entry['loop'])
+        filters.append(audio_filter(index,entry['start']-origin,entry['length'],entry['offset'],
+                                    entry['original_length'],entry['volume'],entry['fade_in'],entry['fade_out'],
+                                    entry['loop'],entry['original_loop'],entry['rate']))
+        labels.append(f'[a{index}]')
+    return args,filters,labels
+
+
+def reduce_audio_inputs(entries, ffmpeg, directory):
+    """Bound decoder/command size; float PCM preserves gain across mixing levels."""
+    entries=sorted(entries,key=lambda entry:entry['start'])
+    level=0
+    while len(entries)>AUDIO_BATCH_INPUTS:
+        reduced=[]
+        for group in range(0,len(entries),AUDIO_BATCH_INPUTS):
+            batch=entries[group:group+AUDIO_BATCH_INPUTS]
+            # Match audio_filter's millisecond placement before removing leading silence.
+            origin=min(round(entry['start']*1000) for entry in batch)/1000
+            length=max(round(entry['start']*1000)/1000+entry['length'] for entry in batch)-origin
+            args,filters,labels=audio_graph(batch,first=0,origin=origin)
+            filters.append(''.join(labels)+f'amix=inputs={len(labels)}:normalize=0:duration=longest,apad,atrim=duration={length:.9f}[mix]')
+            stem=directory/f'mix-{level}-{group//AUDIO_BATCH_INPUTS}.wav'
+            graph=stem.with_suffix('.txt');graph.write_text(';'.join(filters),encoding='utf-8')
+            command=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-y',*args,
+                     '-filter_complex_script',str(graph),'-map','[mix]','-ar','48000','-ac','2',
+                     '-c:a','pcm_f32le','-rf64','auto',str(stem)]
+            result=subprocess.run(command,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                                  timeout=max(60,min(600,length*2)),creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            if result.returncode:
+                raise ValueError('导出音频混音失败：'+result.stderr.decode('utf-8',errors='replace')[-1500:])
+            reduced.append(dict(file=stem,start=origin,length=length,offset=0,original_length=length,
+                                volume=1,fade_in=0,fade_out=0,loop=False,original_loop=None,rate=1,loop_cost=0))
+        if level:
+            for entry in entries:
+                entry['file'].unlink()
+                entry['file'].with_suffix('.txt').unlink()
+        entries=reduced;level+=1
+    return entries
+
 
 def sliced_png(ffmpeg, source, destination, width, height, borders, scale, gradient=None, uniform_to_height=False):
     raw=source.read_bytes()
@@ -146,7 +195,7 @@ def sliced_png(ffmpeg, source, destination, width, height, borders, scale, gradi
 
 class VideoExport:
     def __init__(self, config, root, directory, dialogue_assets=None):
-        self.directory=Path(directory); self.root=Path(root).resolve(); self.proc=None; self.log=None; self.output=None; self.temp=None
+        self.directory=Path(directory); self.root=Path(root).resolve(); self.proc=None; self.log=None; self.output=None; self.temp=None; self.audio_directory=None
         self.native_post=config.get('nativePostEffects',False) is True
         self.native_ui=config.get('nativeUI',False) is True;self.ui_frames=[];self.ui_files={}
         self.fps=config.get('fps'); self.width=config.get('width'); self.height=config.get('height')
@@ -166,9 +215,10 @@ class VideoExport:
             ffmpeg=shutil.which('ffmpeg')
             if not ffmpeg: raise ValueError('未找到 FFmpeg；请安装并加入 PATH')
             audio=config.get('audio',[]); captions=[] if self.native_post else config.get('captions',[])
-            if not isinstance(audio,list) or len(audio)>100 or not isinstance(captions,list) or len(captions)>10000: raise ValueError('导出轨道过多')
+            if not isinstance(audio,list) or len(audio)>MAX_AUDIO_CLIPS: raise ValueError(f'导出音频片段数量无效（最多 {MAX_AUDIO_CLIPS} 个）')
+            if not isinstance(captions,list) or len(captions)>10000: raise ValueError('导出字幕片段数量无效（最多 10000 个）')
             args=[ffmpeg,'-hide_banner','-loglevel','error','-y','-f','image2pipe','-vcodec','png','-framerate',str(self.fps),'-i','pipe:0']
-            filters=[]; audio_labels=[];loop_memory=0;loop_costs={}
+            entries=[];loop_costs={}
             for i,item in enumerate(audio):
                 start=number(item.get('start'),0,self.duration); original_length=number(item.get('length'),0,3600); offset=number(item.get('offset',0),0,3600)
                 vol=number(item.get('volume',1),0,1); fade_in=number(item.get('fadeIn',0),0,3600); fade_out=number(item.get('fadeOut',0),0,3600);loop=item.get('loop',False)
@@ -179,17 +229,24 @@ class VideoExport:
                 if original_loop is not None:
                     if not loop:raise ValueError('原始循环点需要启用音频循环')
                     original_range=validate_original_loop(file,original_loop)
+                loop_cost=0
                 if loop:
                     if file not in loop_costs:loop_costs[file]=audio_loop_cost(shutil.which('ffprobe'),file)
-                    loop_memory=audio_loop_budget(loop_costs[file],loop_memory)
+                    loop_cost=audio_loop_budget(loop_costs[file],0)
                 import audio_effects
                 effects=audio_effects.validate(item.get('effects',[]))
                 playback_rate=item.get('rate',1)
                 if audio_effects.active(effects):
                     _,file=audio_effects.prepare(self.root,item)
-                    loop=False;original_range=None;offset=0;playback_rate=1
-                args+=audio_input_args(file,loop); index=len(audio_labels)+1
-                filters.append(audio_filter(index,start,length,offset,original_length,vol,fade_in,fade_out,loop,original_range,playback_rate));audio_labels.append(f'[a{index}]')
+                    loop=False;original_range=None;offset=0;playback_rate=1;loop_cost=0
+                entries.append(dict(file=file,start=start,length=length,offset=offset,original_length=original_length,
+                                    volume=vol,fade_in=fade_in,fade_out=fade_out,loop=loop,
+                                    original_loop=original_range,rate=playback_rate,loop_cost=loop_cost))
+            if len(entries)>AUDIO_BATCH_INPUTS:
+                self.audio_directory=tempfile.TemporaryDirectory(prefix='audio-',dir=self.directory)
+                entries=reduce_audio_inputs(entries,ffmpeg,Path(self.audio_directory.name))
+            audio_args,filters,audio_labels=audio_graph(entries)
+            args+=audio_args
             game_cues=[x for x in captions if x.get('uiStyle')=='game']
             video_label='0:v'
             if game_cues:
@@ -296,6 +353,7 @@ class VideoExport:
             self.temp.unlink();self.temp=None
         else:
             os.replace(self.temp,self.output);self.temp=None
+        if self.audio_directory:self.audio_directory.cleanup();self.audio_directory=None
     def finish_ui(self):
         if len(self.ui_frames)!=self.frames:raise ValueError('UI 导出帧不完整')
         args=[shutil.which('ffmpeg'),'-hide_banner','-loglevel','error','-y','-i',str(self.base_video),'-f','image2pipe','-vcodec','png','-framerate',str(self.fps),'-i','pipe:0','-filter_complex','[0:v][1:v]overlay=0:0:format=auto:shortest=1[v]','-map','[v]','-map','0:a?','-c:a','copy','-c:v','libx264','-preset','medium','-crf','18','-pix_fmt','yuv420p','-movflags','+faststart','-frames:v',str(self.frames),str(self.temp)]
@@ -323,3 +381,4 @@ class VideoExport:
         if self.temp:
             try:self.temp.unlink(missing_ok=True)
             except OSError:pass
+        if self.audio_directory:self.audio_directory.cleanup();self.audio_directory=None
