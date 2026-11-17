@@ -177,10 +177,11 @@ class GpuExportTest(unittest.TestCase):
         factory.body += ast.parse('return Handler').body
         module = ast.fix_missing_locations(ast.Module(body=[factory], type_ignores=[]))
         player = self.root / 'Player.exe'
-        for marker in ('creator-gpu-export-v1', 'creator-post-effects-v1', 'creator-export-profile-v1', 'creator-merged-export-v1'):
+        for marker in ('creator-gpu-export-v1', 'creator-post-effects-v1', 'creator-export-profile-v1', 'creator-merged-export-v1', 'creator-queued-export-v1'):
             (self.root / marker).touch()
         commands = []
         pending = []
+        queued=[]
         def sendall(data):
             request = json.loads(data)
             commands.append(request)
@@ -189,12 +190,22 @@ class GpuExportTest(unittest.TestCase):
             elif kind in ('frame', 'state-frame'):
                 n = request['exportIndex'] + 1
                 reply = dict(ok=False, error='GPU failed') if fail_frame else dict(ok=True, gpuAccepted=n, gpuCompleted=n)
+            elif kind == 'gpu-export-enqueue':
+                queued.extend(request['queueFrames'])
+                n=len(queued)
+                reply=dict(ok=True,queueSession=request['queueSession'],queueAdmitted=True,queueEnqueued=n,
+                           queueSubmitted=0,queueReported=0,queuePendingBytes=100,queueResults=[])
+            elif kind == 'gpu-export-status':
+                n=len(queued)
+                reply=dict(ok=True,queueSession=request['queueSession'],queueAdmitted=False,queueEnqueued=n,
+                           queueSubmitted=n,queueReported=n,queuePendingBytes=0,
+                           queueResults=[dict(ok=True,gpuAccepted=i+1,gpuCompleted=i) for i in range(n)])
             elif kind == 'gpu-export-finish':
                 self.write_artifacts()
                 reply = dict(ok=True, gpuAccepted=3, gpuCompleted=3)
             else:reply = dict(ok=True)
             pending.append(json.dumps(reply).encode())
-        scope = dict(Path=Path, json=json, time=time, tempfile=tempfile, lock=threading.Lock(),
+        scope = dict(Path=Path, json=json, time=time, tempfile=tempfile, lock=threading.RLock(),
                      conn=SimpleNamespace(sendall=sendall), stream=SimpleNamespace(readline=lambda n: pending.pop(0)),
                      token='test', origin='local', PreviewRequestHandler=host.PreviewRequestHandler,
                      export_capable=True, player=player, output=self.root, library_root=self.root,
@@ -227,6 +238,22 @@ class GpuExportTest(unittest.TestCase):
             self.assertEqual(commands[-1]['sceneId'], 'trainingroom')
         self.assertEqual(request('export-finish', {})[1], 200)
         self.assertEqual([r['kind'] for r in commands], ['gpu-export-start']+['state-frame']*3+['gpu-export-finish'])
+
+    def test_host_queue_admission_drain_finish_and_stale_cancel(self):
+        request, commands=self.handler()
+        reply,status=request('export-start',dict(self.config,mergedFrame=True,queueCapacity=4))
+        self.assertEqual(status,200,reply);session=reply['queueSession']
+        # A delayed request from another export must not cancel this one.
+        self.assertEqual(request('export-cancel',dict(queueSession='old'))[1],502)
+        self.assertEqual(len(commands),1)
+        rows=[dict(index=i,state=dict(sceneId='trainingroom')) for i in range(3)]
+        reply,status=request('export-enqueue',dict(queueSession=session,frames=rows))
+        self.assertEqual(status,200,reply);self.assertEqual(reply['queueReported'],0)
+        self.assertEqual(commands[-1]['queueFrames'][2]['frameIndex'],32)
+        reply,status=request('export-status',dict(queueSession=session))
+        self.assertEqual(status,200,reply);self.assertEqual(reply['queueReported'],3)
+        reply,status=request('export-finish',dict(queueSession=session))
+        self.assertEqual(status,200,reply);self.assertTrue((self.root/'result.mp4').exists())
 
     def test_host_missing_merged_state_cancels_without_submitting_frame(self):
         request, commands = self.handler()

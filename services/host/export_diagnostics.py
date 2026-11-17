@@ -23,6 +23,11 @@ def merged_frame_request(state, frame, enabled):
     return packet
 
 
+def diagnostic_limit(config):
+    # Only the validated merged GPU path gets a bounded 60s-at-30fps probe.
+    return 1800 if config.get('gpuVideo') is True and config.get('mergedFrame') is True else 300
+
+
 def sample_range(config, total_frames, native_post):
     value = config.get('diagnosticRange')
     if value is None:
@@ -30,8 +35,8 @@ def sample_range(config, total_frames, native_post):
     if not native_post or not config.get('newOnly') or not isinstance(value, dict):
         raise ValueError('诊断区间需要原生合成与新输出文件')
     start, end = value.get('startFrame'), value.get('endFrame')
-    if type(start) is not int or type(end) is not int or not 0 <= start < end <= total_frames or end-start > 300:
-        raise ValueError('诊断区间必须是工程内的 1～300 帧')
+    if type(start) is not int or type(end) is not int or not 0 <= start < end <= total_frames or end-start > diagnostic_limit(config):
+        raise ValueError(f'诊断区间必须是工程内的 1～{diagnostic_limit(config)} 帧')
     return start, end
 
 
@@ -46,8 +51,8 @@ def validate_gpu_video(config, native_post, native_ui, frames):
     if not isinstance(value, bool):
         raise ValueError('Invalid GPU video flag')
     if value and (not native_post or native_ui or config.get('diagnosticRange') is None
-                  or config.get('newOnly') is not True or not 1 <= frames <= 300):
-        raise ValueError('GPU 视频仅支持原生合成的 1～300 帧诊断与新输出文件')
+                  or config.get('newOnly') is not True or not 1 <= frames <= diagnostic_limit(config)):
+        raise ValueError(f'GPU 视频仅支持原生合成的 1～{diagnostic_limit(config)} 帧诊断与新输出文件')
     return value
 
 

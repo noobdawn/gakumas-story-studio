@@ -212,6 +212,10 @@ class VideoExport:
         self.frames=self.end_frame-self.start_frame
         self.gpu_video=validate_gpu_video(config,self.native_post,self.native_ui,self.frames)
         self.merged_frame=validate_merged_frame(config,self.gpu_video)
+        from export_queue import capacity
+        self.queue_capacity=capacity(config,self.merged_frame)
+        self.queue_session=secrets.token_hex(16) if self.queue_capacity else ''
+        self.queue_enqueued=0
         if self.gpu_video:
             if gpu_input is None or Path(gpu_input).name!='export-gpu.h264':raise ValueError('GPU 导出输入路径无效')
             gpu_input=Path(gpu_input).resolve();sidecar=gpu_input.with_suffix('.frames.jsonl')

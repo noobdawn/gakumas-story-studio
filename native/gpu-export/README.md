@@ -1,7 +1,8 @@
 # D3D11 / NVENC export prototype
 
 Opt-in diagnostics only: `video.benchmark` with `gpuVideo: true`, native final
-composition, a new destination, and at most 300 frames. Normal exports keep
+composition and a new destination. The merged GPU diagnostic permits at most
+1,800 frames; other diagnostic paths remain capped at 300. Normal exports keep
 the existing PNG / libx264 route. NVIDIA hardware, a compatible driver,
 Direct3D 11 and Unity Linear color space are required; failure is explicit.
 
@@ -11,6 +12,15 @@ thread. No full-size pixels are mapped/read back. Input texture dimensions,
 format, driver capabilities, frame order and output timestamps are checked.
 Unity retains its display target until the render callback has accepted it.
 The plugin retains native references until draining/destruction finishes.
+
+`mergedFrame: true` can additionally select `queueCapacity: 1`, `4` or `8`.
+The host admits at most four immutable state packets per batch; Unity consumes
+them sequentially. Queue credits cover pending, active and unreported frames,
+with a separate 2 MiB serialized-state budget. Session tokens isolate stale
+requests, and cancellation drains the current frame before native disposal.
+This reuses the existing display texture and native pool; it does not add
+multi-texture rendering or change encoding settings. Queue mode is diagnostic
+only and requires the `creator-queued-export-v1` Player capability marker.
 
 The first experiment uses H.264 High, P4 HQ, constant QP 18, no B frames and no
 lookahead. QP 18 is **not equivalent** to x264 CRF 18. Source frame `i` has

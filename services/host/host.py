@@ -381,28 +381,31 @@ def main():
                     incoming.close(); candidate.close()
                 if conn is None: raise TimeoutError('Player TCP session handshake timed out')
                 listener.close()
-            lock = threading.Lock()
+            lock = threading.RLock()
             stopping = threading.Event()
             export_job = None
             export_dir = None
             def gpu_export_command(kind, **values):
                 request=dict(token=token,id=0,kind=kind,**values)
+                if export_job is not None and getattr(export_job,'queue_capacity',0):request['queueSession']=export_job.queue_session
                 with lock:
                     conn.sendall((json.dumps(request,separators=(',', ':'))+'\n').encode())
-                    reply=json.loads(stream.readline(4097))
+                    reply=json.loads(stream.readline(262145 if kind in ('gpu-export-enqueue','gpu-export-status') else 4097))
                 if reply.get('ok') is not True:raise RuntimeError('GPU 导出失败：'+str(reply.get('error','Player 回复无效')))
                 return reply
-            def cancel_export():
+            def cancel_export(expected_session=None):
                 nonlocal export_job, export_dir
-                job=export_job
-                try:
-                    if job is not None and job.gpu_video:gpu_export_command('gpu-export-cancel')
-                finally:
+                with lock:
+                    job=export_job
+                    if expected_session is not None and job is not None and getattr(job,'queue_session',None)!=expected_session:raise ValueError('导出队列会话已失效')
                     try:
-                        if job is not None:job.cancel()
+                        if job is not None and job.gpu_video:gpu_export_command('gpu-export-cancel')
                     finally:
-                        export_job=None
-                        if export_dir is not None:export_dir.cleanup();export_dir=None
+                        try:
+                            if job is not None:job.cancel()
+                        finally:
+                            export_job=None
+                            if export_dir is not None:export_dir.cleanup();export_dir=None
             class Handler(PreviewRequestHandler):
                 def log_message(self, *unused): pass
                 def do_GET(self):
@@ -482,7 +485,7 @@ def main():
                     prefix = '/' + token + '/ui/'
                     if not self.path.startswith(prefix): return self.send_error(404)
                     name = self.path[len(prefix):].split('?', 1)[0] or 'index.html'
-                    if name not in ('story-timeline.js', 'story-editor.js', 'story-voice.js', 'notifications.js', 'post-effects.js', 'post-effects-editor.js', 'composition.js', 'composition-editor.js', 'audio-effects-preview.js', 'panel-selection.js', 'project-removal.js', 'timeline-edit.js', 'timeline-groups.js', 'screen-media.js', 'screen-media-editor.js', 'render-settings.js', 'ui-transition-graph.js', 'ui-transition-engine.js', 'ui-transitions.js', 'ui-transition-editor.js', 'animation-layers.js', 'animation-layer-ui.js', 'asset-settings.js', 'scene-catalog.js', 'index.html', 'styles.css', 'desktop.css', 'controls.css', 'asset-settings.css', 'layout-responsive.css', 'task-progress.js', 'lipsync.js', 'fades.js', 'classroom-props.js', 'app.js', 'motion-names.js', 'pronunciation.js', 'layout-schema.js', 'layout.js', 'embed.js'):
+                    if name not in ('story-timeline.js', 'story-editor.js', 'story-voice.js', 'notifications.js', 'export-queue.js', 'post-effects.js', 'post-effects-editor.js', 'composition.js', 'composition-editor.js', 'audio-effects-preview.js', 'panel-selection.js', 'project-removal.js', 'timeline-edit.js', 'timeline-groups.js', 'screen-media.js', 'screen-media-editor.js', 'render-settings.js', 'ui-transition-graph.js', 'ui-transition-engine.js', 'ui-transitions.js', 'ui-transition-editor.js', 'animation-layers.js', 'animation-layer-ui.js', 'asset-settings.js', 'scene-catalog.js', 'index.html', 'styles.css', 'desktop.css', 'controls.css', 'asset-settings.css', 'layout-responsive.css', 'task-progress.js', 'lipsync.js', 'fades.js', 'classroom-props.js', 'app.js', 'motion-names.js', 'pronunciation.js', 'layout-schema.js', 'layout.js', 'embed.js'):
                         return self.send_error(404)
                     if name=='scene-catalog.js':
                         data=('globalThis.CreatorSceneCatalog='+json.dumps(background_entries,ensure_ascii=False)+';').encode('utf8')
@@ -498,17 +501,19 @@ def main():
                 def do_POST(self):
                     nonlocal export_job, export_dir
                     request_start = time.perf_counter()
+                    message = {}
                     endpoint = self.path.removeprefix('/' + token + '/')
-                    if self.path != '/' + token + '/' + endpoint or endpoint not in ('state', 'thumbnail', 'capture', 'bounds', 'shutdown', 'export-start', 'export-frame', 'export-finish', 'export-cancel', 'audio-effects') or self.headers.get('Origin') != origin:
+                    if self.path != '/' + token + '/' + endpoint or endpoint not in ('state', 'thumbnail', 'capture', 'bounds', 'shutdown', 'export-start', 'export-frame', 'export-enqueue', 'export-status', 'export-finish', 'export-cancel', 'audio-effects') or self.headers.get('Origin') != origin:
                         return self.send_error(403)
                     try:
-                        message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint in ('state','export-frame') else 20000)
+                        message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint in ('state','export-frame','export-enqueue') else 20000)
                         parsed_at = time.perf_counter()
                         if endpoint == 'state':
+                            if export_job is not None and getattr(export_job,'queue_capacity',0):raise ValueError('状态队列导出正在使用场景')
                             # GPU lifecycle and frame mode are selected by the active job,
                             # never by a caller-supplied state packet.
                             if str(message.get('kind','')).startswith('gpu-export-') or message.get('kind')=='state-frame':raise ValueError('GPU 命令需要诊断导出入口')
-                            for key in ('gpuVideo','gpuVideoFps','exportIndex'):message.pop(key,None)
+                            for key in ('gpuVideo','gpuVideoFps','exportIndex','queueFrames','queueCapacity','queueSession'):message.pop(key,None)
                             profiling = message.get('profileExport') is True
                             if profiling and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                             dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
@@ -548,28 +553,41 @@ def main():
                                     if len(content)>2*1024*1024:raise ValueError('截图过大')
                                     reply['dataUrl']='data:image/png;base64,'+base64.b64encode(content).decode('ascii')
                         elif endpoint == 'export-start':
-                            if not export_capable or export_job is not None: raise ValueError('导出不可用或已在进行')
-                            if message.get('profileExport') is True and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
-                            if message.get('gpuVideo') is True and not (player.parent/'creator-gpu-export-v1').is_file():raise ValueError('Player 不支持 GPU 视频诊断')
-                            if message.get('mergedFrame') is True and not (player.parent/'creator-merged-export-v1').is_file():raise ValueError('Player 不支持合并帧诊断')
-                            from export_video import VideoExport
-                            message['nativePostEffects'] = message.get('nativePostEffects') is True
-                            if message['nativePostEffects'] and not (player.parent/'creator-post-effects-v1').is_file():raise ValueError('当前 Player 不支持画面效果')
-                            message['nativeUI'] = bool(ui_graph_capable and message.get('uiTransitions') and not message['nativePostEffects'])
-                            message['dialogueNameRoundCaps'] = (player.parent / 'creator-dialogue-proportional-cap-v1').is_file()
-                            export_dir=tempfile.TemporaryDirectory(prefix='export-',dir=output)
-                            try:
-                                export_job=VideoExport(message,library_root,export_dir.name,args.dialogue_assets if game_dialogue else None,gpu_input=Path(output)/'export-gpu.h264')
-                                if export_job.gpu_video:
-                                    from export_diagnostics import validate_gpu_reply
-                                    gpu_reply=gpu_export_command('gpu-export-start',frameWidth=export_job.width,frameHeight=export_job.height,gpuVideoFps=export_job.fps)
-                                    validate_gpu_reply(gpu_reply,0,final=True)
-                            except Exception as start_error:
-                                try:cancel_export()
-                                except Exception as cleanup_error:raise RuntimeError(str(start_error)+'；GPU 清理失败：'+str(cleanup_error)) from start_error
-                                raise
-                            reply={'ok':True,'frames':export_job.frames,'startFrame':export_job.start_frame,'runId':export_job.run_id,'profile':export_job.profile,'gpuVideo':export_job.gpu_video,'mergedFrame':export_job.merged_frame}
+                            with lock:
+                                if not export_capable or export_job is not None: raise ValueError('导出不可用或已在进行')
+                                if message.get('profileExport') is True and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
+                                if message.get('gpuVideo') is True and not (player.parent/'creator-gpu-export-v1').is_file():raise ValueError('Player 不支持 GPU 视频诊断')
+                                if message.get('mergedFrame') is True and not (player.parent/'creator-merged-export-v1').is_file():raise ValueError('Player 不支持合并帧诊断')
+                                if message.get('queueCapacity',0) and not (player.parent/'creator-queued-export-v1').is_file():raise ValueError('Player 不支持状态队列诊断')
+                                from export_video import VideoExport
+                                message['nativePostEffects'] = message.get('nativePostEffects') is True
+                                if message['nativePostEffects'] and not (player.parent/'creator-post-effects-v1').is_file():raise ValueError('当前 Player 不支持画面效果')
+                                message['nativeUI'] = bool(ui_graph_capable and message.get('uiTransitions') and not message['nativePostEffects'])
+                                message['dialogueNameRoundCaps'] = (player.parent / 'creator-dialogue-proportional-cap-v1').is_file()
+                                export_dir=tempfile.TemporaryDirectory(prefix='export-',dir=output)
+                                try:
+                                    export_job=VideoExport(message,library_root,export_dir.name,args.dialogue_assets if game_dialogue else None,gpu_input=Path(output)/'export-gpu.h264')
+                                    if export_job.gpu_video:
+                                        from export_diagnostics import validate_gpu_reply
+                                        gpu_reply=gpu_export_command('gpu-export-start',frameWidth=export_job.width,frameHeight=export_job.height,gpuVideoFps=export_job.fps,queueCapacity=export_job.queue_capacity)
+                                        validate_gpu_reply(gpu_reply,0,final=True)
+                                except Exception as start_error:
+                                    try:cancel_export()
+                                    except Exception as cleanup_error:raise RuntimeError(str(start_error)+'；GPU 清理失败：'+str(cleanup_error)) from start_error
+                                    raise
+                                reply={'ok':True,'frames':export_job.frames,'startFrame':export_job.start_frame,'runId':export_job.run_id,'profile':export_job.profile,'gpuVideo':export_job.gpu_video,'mergedFrame':export_job.merged_frame,'queueCapacity':export_job.queue_capacity,'queueSession':export_job.queue_session}
+                        elif endpoint in ('export-enqueue','export-status'):
+                            with lock:
+                                from export_queue import require_session,frames as queue_frames,consume
+                                require_session(export_job,message)
+                                def prepare_queue_frame(packet):
+                                    dedicated_effects.validate_message(packet,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
+                                    packet['mediaDraws']=visual_media.resolve_draws(library_root,packet.get('mediaDraws',[]))
+                                packets=queue_frames(export_job,message,token,prepare_queue_frame) if endpoint=='export-enqueue' else []
+                                reply=gpu_export_command('gpu-export-enqueue' if packets else 'gpu-export-status',**({'queueFrames':packets} if packets else {}))
+                                consume(export_job,reply,len(packets))
                         elif endpoint == 'export-frame':
+                            if export_job is not None and getattr(export_job,'queue_capacity',0):raise ValueError('请使用队列帧入口')
                             if export_job is None or message.get('index')!=export_job.count: raise ValueError('帧顺序无效')
                             request={'token':token,'id':message.get('id',0),'kind':'frame','frameWidth':export_job.width,'frameHeight':export_job.height,'captureUiLayer':export_job.native_ui,'includeUiOverlay':export_job.native_post}
                             request.update(profileExport=export_job.profile,frameIndex=export_job.start_frame+export_job.count,runId=export_job.run_id,skipPreRender=message.get('skipPreRender') is True,gpuColor=message.get('gpuColor') is True,gpuVideo=export_job.gpu_video,exportIndex=export_job.count)
@@ -602,15 +620,24 @@ def main():
                                     if message.get('frameDigest') is True and export_job.frames<=300:
                                         reply['pngSha256']=hashlib.sha256(image).hexdigest()
                         elif endpoint == 'export-finish':
-                            if export_job is None: raise ValueError('没有进行中的导出')
-                            reply={'ok':True}
-                            if export_job.gpu_video:
-                                reply=gpu_export_command('gpu-export-finish',exportIndex=export_job.frames)
-                                export_job.complete_gpu(reply)
-                            export_job.finish();export_job=None;export_dir.cleanup();export_dir=None
+                            with lock:
+                                if export_job is None: raise ValueError('没有进行中的导出')
+                                if export_job.queue_capacity:
+                                    from export_queue import require_session
+                                    require_session(export_job,message)
+                                    if export_job.count!=export_job.frames:raise ValueError('导出队列尚未完成')
+                                reply={'ok':True}
+                                if export_job.gpu_video:
+                                    reply=gpu_export_command('gpu-export-finish',exportIndex=export_job.frames)
+                                    export_job.complete_gpu(reply)
+                                export_job.finish();export_job=None;export_dir.cleanup();export_dir=None
                         elif endpoint == 'export-cancel':
-                            cancel_export()
-                            reply={'ok':True}
+                            with lock:
+                                if export_job is not None and getattr(export_job,'queue_capacity',0):
+                                    from export_queue import require_session
+                                    require_session(export_job,message)
+                                cancel_export(message.get('queueSession') or None)
+                                reply={'ok':True}
                         elif endpoint == 'bounds':
                             if embedded is None: raise ValueError('No embedded Player')
                             if not isinstance(message.get('visible'), bool) or any(type(message.get(k)) is not int or abs(message[k]) > 16384 for k in ('x', 'y', 'width', 'height')) or message['width'] < 1 or message['height'] < 1:
@@ -627,8 +654,8 @@ def main():
                         # All POST endpoints are JSON APIs. Preserve the actual
                         # failure instead of hiding it behind an HTML parse error.
                         error=str(e)
-                        if export_job is not None and export_job.gpu_video and endpoint in ('state','export-frame','export-finish'):
-                            try:cancel_export()
+                        if export_job is not None and export_job.gpu_video and endpoint in ('state','export-frame','export-enqueue','export-status','export-finish') and (not getattr(export_job,'queue_capacity',0) or message.get('queueSession')==export_job.queue_session):
+                            try:cancel_export(message.get('queueSession') or None)
                             except Exception as cleanup_error:error+='；GPU 清理失败：'+str(cleanup_error)
                         self.send_json({'ok':False,'error':error},502)
             server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
