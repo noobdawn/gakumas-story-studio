@@ -46,6 +46,7 @@ public static class CreatorBuild {
    if(ensure==null||ensure.Invoke(null,new object[]{true})==null)throw new Exception("Cannot initialize URP global settings");
    AssetDatabase.SaveAssets(); GraphicsSettings.defaultRenderPipeline=pipeline; QualitySettings.renderPipeline=pipeline;
    CreatorAntialiasingTests.Run();
+   CreatorDialogueColorTests.Run();
    var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
    var bootstrap=new GameObject("CreatorPrototype").AddComponent<CreatorPrototypePlayer>(); bootstrap.postEffectShader=Shader.Find("Hidden/Creator/StoryEffects");if(!bootstrap.postEffectShader)throw new Exception("Story effects shader missing");bootstrap.uiGraphShader=Shader.Find("Creator/UIGraph");if(!bootstrap.uiGraphShader)throw new Exception("UI graph shader missing");bootstrap.selectionShellShader=Shader.Find("Creator/SelectionShell");bootstrap.gizmoAxisShader=Shader.Find("Creator/GizmoColor");if(!bootstrap.selectionShellShader||!bootstrap.gizmoAxisShader)throw new Exception("Gizmo shaders missing");
    bootstrap.roundEyeShader=Shader.Find("Creator/RoundEyeAlpha"); if(!bootstrap.roundEyeShader)throw new Exception("Round eye shader missing"); bootstrap.faceDecalShader=Shader.Find("Creator/FaceDecalResearch"); if(!bootstrap.faceDecalShader)throw new Exception("Face decal shader missing"); bootstrap.sceneLighting=native;bootstrap.actorPipeline=pipeline; bootstrap.actorOutline=outline; bootstrap.fallbackShader=Shader.Find("Probe/Unlit");

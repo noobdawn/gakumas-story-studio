@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory(typeof module==='object'?require('./post-effects'):root.CreatorPostEffects);if(typeof module==='object')module.exports=api;else root.CreatorComposition=api;})(globalThis,P=>{
+(function(root,factory){const api=factory(typeof module==='object'?require('./post-effects'):root.CreatorPostEffects,typeof module==='object'?require('./character-colors'):root.CreatorCharacterColors);if(typeof module==='object')module.exports=api;else root.CreatorComposition=api;})(globalThis,(P,C)=>{
  'use strict';
  const visualTypes=['world','media','dialogue','ui','visualFilter','visualEffect'];
  const visual=t=>visualTypes.includes(t.type), processing=t=>['visualFilter','visualEffect'].includes(t.type);
@@ -45,7 +45,7 @@
    if(t.type==='media'&&s.objects.find(o=>o.id===t.target)?.visible===false)continue;
    if(t.type==='media'){const x=transitionAt(s,t,time);if(x){nodes.push({kind:'transition',id:x.id,leftId:x.leftId,rightId:x.rightId,transition:x.kind,progress:x.progress,leftEffects:local(x.leftId),rightEffects:local(x.rightId)});continue;}}
    for(const c of t.clips.filter(c=>active(c,time))){const node={kind:t.type,id:c.id,effects:local(c.id)};
-    if(t.type==='dialogue'){const d=s.dialogues.find(d=>d.id===c.dialogue);if(!d)continue;Object.assign(node,{speaker:d.speaker.slice(0,100),text:text(d,c).slice(0,500),style:d.uiStyle||'box',color:d.nameColor||'#57576D',colorEnd:d.nameColorEnd||d.nameColor||'#57576D',x:c.dialogueLayout?.x||0,y:c.dialogueLayout?.y||0,scale:c.dialogueLayout?.scale??1,opacity:c.dialogueLayout?.opacity??1});}
+    if(t.type==='dialogue'){const d=s.dialogues.find(d=>d.id===c.dialogue);if(!d)continue;Object.assign(node,{speaker:d.speaker.slice(0,100),text:text(d,c).slice(0,500),style:d.uiStyle||'box',color:C.resolve(s,d)[0],colorEnd:C.resolve(s,d)[1],nameTextColor:C.label(s,d),x:c.dialogueLayout?.x||0,y:c.dialogueLayout?.y||0,scale:c.dialogueLayout?.scale??1,opacity:c.dialogueLayout?.opacity??1});}
     if(t.type==='ui')node.draws=ui(c);nodes.push(node);
    }
   }

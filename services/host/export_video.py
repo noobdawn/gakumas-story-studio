@@ -323,7 +323,8 @@ class VideoExport:
                         if events>10000:raise ValueError('逐字字幕过多，请减少对白或关闭逐字显示')
                         visible=text[:min(len(text),max(0,math.floor((a-origin)*rate+1e-8)+1))] if typing else text
                         if mode=='game':
-                            content='{\\an7\\pos(%d,%d)\\b1\\c&HFFFFFF&}'%(round(self.width*.105),round(self.height*.635))+speaker+'\n'+f'Dialogue: 0,{ass_time(a)},{ass_time(b)},Game,,0,0,0,,'+'{\\an7\\pos(%d,%d)}'%(round(self.width*.12),round(self.height*.725))+ass_text(visible)
+                            ink=color(cue.get('nameTextColor','#ffffff'));ink_bgr=''.join(f'{v:02X}' for v in reversed(ink))
+                            content='{\\an7\\pos(%d,%d)\\b1\\c&H%s&}'%(round(self.width*.105),round(self.height*.635),ink_bgr)+speaker+'\n'+f'Dialogue: 0,{ass_time(a)},{ass_time(b)},Game,,0,0,0,,'+'{\\an7\\pos(%d,%d)}'%(round(self.width*.12),round(self.height*.725))+ass_text(visible)
                         else:content=speaker+r'\N'+ass_text(visible)
                         ass+=f'Dialogue: 0,{ass_time(a)},{ass_time(b)},{style_name},,0,0,0,,{content}\n'
                 ass+=ui_events

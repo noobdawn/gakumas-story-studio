@@ -4,7 +4,7 @@ using System.Linq;
 using UnityEngine;
 
 [Serializable] public sealed class CreatorCompositionNode {
- public string kind,id,leftId,rightId,transition,speaker,text,style,color,colorEnd;
+ public string kind,id,leftId,rightId,transition,speaker,text,style,color,colorEnd,nameTextColor;
  public float progress,x,y,scale=1,opacity=1;
  public CreatorEffectLayer[] effects,leftEffects,rightEffects;
  public CreatorUIDraw[] draws;

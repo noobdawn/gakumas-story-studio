@@ -74,11 +74,11 @@ class ExportTest(unittest.TestCase):
     def test_game_style_uses_external_images_and_exports(self):
         assets=self.dir/'dialogue-assets';assets.mkdir()
         for name,w,h in [('message_bg.png',81,81),('frame_message_bg.png',81,81),('name_bg.png',66,64)]: (assets/name).write_bytes(solid_png(w,h))
-        config=self.config();config['captions']=[{'start':.1,'end':.9,'speaker':'测试','text':'你好','uiStyle':'game','typewriter':True,'revealRate':4}]
+        config=self.config();config['captions']=[{'start':.1,'end':.9,'speaker':'测试','text':'你好','uiStyle':'game','nameColor':'#6ea4fc','nameColorEnd':'#d4afff','nameTextColor':'#123456','typewriter':True,'revealRate':4}]
         with self.assertRaisesRegex(ValueError,'素材缺失'):VideoExport(config,self.dir,self.dir)
         job=VideoExport(config,self.dir,self.dir,assets)
         try:
-            self.assertTrue((self.dir/'game-bg.png').is_file());self.assertIn('Style: Game',(self.dir/'captions.ass').read_text(encoding='utf-8-sig'))
+            self.assertTrue((self.dir/'game-bg.png').is_file());self.assertIn('Style: Game',(self.dir/'captions.ass').read_text(encoding='utf-8-sig'));self.assertIn(r'\c&H563412&',(self.dir/'captions.ass').read_text(encoding='utf-8-sig'))
             for _ in range(job.frames):job.write(png16())
             job.finish()
         finally:job.cancel()
