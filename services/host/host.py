@@ -513,7 +513,7 @@ def main():
                             # GPU lifecycle and frame mode are selected by the active job,
                             # never by a caller-supplied state packet.
                             if str(message.get('kind','')).startswith('gpu-export-') or message.get('kind')=='state-frame':raise ValueError('GPU 命令需要诊断导出入口')
-                            for key in ('gpuVideo','gpuVideoFps','exportIndex','queueFrames','queueCapacity','queueSession'):message.pop(key,None)
+                            for key in ('gpuVideo','gpuVideoFps','exportIndex','queueFrames','queueCapacity','queueSession','frameSupersampling'):message.pop(key,None)
                             profiling = message.get('profileExport') is True
                             if profiling and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                             dedicated_effects.validate_message(message,(player.parent/'creator-dedicated-effects-v2').is_file(),(player.parent/'creator-thought-filter-v1').is_file())
@@ -556,6 +556,7 @@ def main():
                             with lock:
                                 if not export_capable or export_job is not None: raise ValueError('导出不可用或已在进行')
                                 if message.get('exportMode')=='gpu' and not (player.parent/'creator-production-gpu-v1').is_file():raise ValueError('当前 Player 不支持 GPU 加速导出，请更新程序或选择兼容模式')
+                                if message.get('exportSupersampling',1)!=1 and not (player.parent/'creator-antialiasing-v1').is_file():raise ValueError('当前 Player 不支持导出超采样，请更新程序')
                                 if message.get('profileExport') is True and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                                 if message.get('gpuVideo') is True and not (player.parent/'creator-gpu-export-v1').is_file():raise ValueError('Player 不支持 GPU 视频诊断')
                                 if message.get('mergedFrame') is True and not (player.parent/'creator-merged-export-v1').is_file():raise ValueError('Player 不支持合并帧诊断')
@@ -592,7 +593,7 @@ def main():
                             if export_job is not None and getattr(export_job,'queue_capacity',0):raise ValueError('请使用队列帧入口')
                             if export_job is None or message.get('index')!=export_job.count: raise ValueError('帧顺序无效')
                             request={'token':token,'id':message.get('id',0),'kind':'frame','frameWidth':export_job.width,'frameHeight':export_job.height,'captureUiLayer':export_job.native_ui,'includeUiOverlay':export_job.native_post}
-                            request.update(profileExport=export_job.profile,frameIndex=export_job.start_frame+export_job.count,runId=export_job.run_id,skipPreRender=message.get('skipPreRender') is True,gpuColor=message.get('gpuColor') is True,gpuVideo=export_job.gpu_video,exportIndex=export_job.count)
+                            request.update(frameSupersampling=export_job.supersampling,profileExport=export_job.profile,frameIndex=export_job.start_frame+export_job.count,runId=export_job.run_id,skipPreRender=message.get('skipPreRender') is True,gpuColor=message.get('gpuColor') is True,gpuVideo=export_job.gpu_video,exportIndex=export_job.count)
                             from export_diagnostics import merged_frame_request
                             request=merged_frame_request(message.get('state'),request,export_job.merged_frame)
                             if export_job.merged_frame:

@@ -36,9 +36,12 @@ public sealed class CreatorLinearRendering : IDisposable {
         foreach(var n in new[]{"_VLFogParams","_VLFogSphere","_VLFogColor","_VLFogSphereColor"})Shader.SetGlobalVector(n,Vector4.zero);
     }
     public static void ConfigureCamera(Camera camera,CreatorRenderSettings settings=null) {
-        camera.allowHDR=true;camera.allowMSAA=false;
+        settings=settings??new CreatorRenderSettings();settings.Validate();
+        camera.allowHDR=true;camera.allowMSAA=settings.MsaaSamples>1;
+        var pipeline=GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+        if(pipeline&&pipeline.msaaSampleCount!=settings.MsaaSamples)pipeline.msaaSampleCount=settings.MsaaSamples;
         var data=camera.GetUniversalAdditionalCameraData();data.renderPostProcessing=true;
-        settings=settings??new CreatorRenderSettings();data.antialiasing=settings.antialiasing==2?AntialiasingMode.SubpixelMorphologicalAntiAliasing:settings.antialiasing==1?AntialiasingMode.FastApproximateAntialiasing:AntialiasingMode.None;data.antialiasingQuality=AntialiasingQuality.High;
+        data.antialiasing=settings.UsesSmaa?AntialiasingMode.SubpixelMorphologicalAntiAliasing:settings.antialiasing==1?AntialiasingMode.FastApproximateAntialiasing:AntialiasingMode.None;data.antialiasingQuality=AntialiasingQuality.High;
         if(!camera.GetComponent<ActorEyeHighlightBinding>())camera.gameObject.AddComponent<ActorEyeHighlightBinding>();
         camera.GetComponent<ActorEyeHighlightBinding>().highlightColor=Color.white*settings.eyeHighlight;
     }

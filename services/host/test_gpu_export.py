@@ -57,6 +57,15 @@ class GpuExportTest(unittest.TestCase):
             job.write_gpu(dict(ok=True, gpuAccepted=n, gpuCompleted=n - 1))
         job.complete_gpu(dict(ok=True, gpuAccepted=3, gpuCompleted=3))
 
+    def test_supersampling_defaults_and_validates_before_output_creation(self):
+        job=self.job();self.assertEqual(job.supersampling,1);job.cancel()
+        job=self.job(dict(self.config,exportSupersampling=2));self.assertEqual(job.supersampling,2);job.cancel()
+        for value in (None,True,'2',0,1.5,3,4):
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,'超采样'):
+                self.job(dict(self.config,exportSupersampling=value))
+        self.assertEqual(list(self.root.glob('.*.tmp.mp4')),[])
+        self.popen.assert_not_called()
+
     def test_merged_mode_requires_gpu_job_and_boolean_flag(self):
         self.assertFalse(validate_merged_frame({}, False))
         self.assertTrue(validate_merged_frame({'mergedFrame': True}, True))

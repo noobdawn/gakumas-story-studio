@@ -202,6 +202,8 @@ class VideoExport:
         self.native_post=config.get('nativePostEffects',False) is True
         self.native_ui=config.get('nativeUI',False) is True;self.ui_frames=[];self.ui_files={}
         self.fps=config.get('fps'); self.width=config.get('width'); self.height=config.get('height')
+        self.supersampling=config.get('exportSupersampling',1)
+        if type(self.supersampling) is not int or self.supersampling not in (1,2):raise ValueError('导出超采样只能为 1 或 2')
         if self.fps not in (24,25,30,60) or type(self.width) is not int or type(self.height) is not int or not (16<=self.width<=1920 and 16<=self.height<=1920 and self.width%2==0 and self.height%2==0): raise ValueError('Invalid output dimensions or frame rate')
         self.duration=number(config.get('duration'),1,3600); self.frames=math.ceil(self.duration*self.fps); self.count=0
         self.profile=validate_profile(config.get("profileExport",False));self.last_write_ms=0

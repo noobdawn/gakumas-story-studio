@@ -45,6 +45,7 @@ public static class CreatorBuild {
    var ensure=settingsType?.GetMethod("Ensure",System.Reflection.BindingFlags.Static|System.Reflection.BindingFlags.NonPublic);
    if(ensure==null||ensure.Invoke(null,new object[]{true})==null)throw new Exception("Cannot initialize URP global settings");
    AssetDatabase.SaveAssets(); GraphicsSettings.defaultRenderPipeline=pipeline; QualitySettings.renderPipeline=pipeline;
+   CreatorAntialiasingTests.Run();
    var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
    var bootstrap=new GameObject("CreatorPrototype").AddComponent<CreatorPrototypePlayer>(); bootstrap.postEffectShader=Shader.Find("Hidden/Creator/StoryEffects");if(!bootstrap.postEffectShader)throw new Exception("Story effects shader missing");bootstrap.uiGraphShader=Shader.Find("Creator/UIGraph");if(!bootstrap.uiGraphShader)throw new Exception("UI graph shader missing");bootstrap.selectionShellShader=Shader.Find("Creator/SelectionShell");bootstrap.gizmoAxisShader=Shader.Find("Creator/GizmoColor");if(!bootstrap.selectionShellShader||!bootstrap.gizmoAxisShader)throw new Exception("Gizmo shaders missing");
    bootstrap.roundEyeShader=Shader.Find("Creator/RoundEyeAlpha"); if(!bootstrap.roundEyeShader)throw new Exception("Round eye shader missing"); bootstrap.faceDecalShader=Shader.Find("Creator/FaceDecalResearch"); if(!bootstrap.faceDecalShader)throw new Exception("Face decal shader missing"); bootstrap.sceneLighting=native;bootstrap.actorPipeline=pipeline; bootstrap.actorOutline=outline; bootstrap.fallbackShader=Shader.Find("Probe/Unlit");
@@ -52,6 +53,7 @@ public static class CreatorBuild {
    var result=BuildPipeline.BuildPlayer(new[]{folder+"/CreatorRenderScene.unity"},Path.Combine(output,"CreatorPlayer.exe"),BuildTarget.StandaloneWindows64,BuildOptions.None);
    File.WriteAllText(Path.Combine(output,"build-report.txt"),"result="+result.summary.result+"\nerrors="+result.summary.totalErrors+"\ngraphicsApi="+string.Join(",",PlayerSettings.GetGraphicsAPIs(BuildTarget.StandaloneWindows64))+"\nautoGraphicsApi="+PlayerSettings.GetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64)+"\ncolorspace="+PlayerSettings.colorSpace+"\nbuild=release\nmsaa=1\nantialiasing=SMAA High\n");
    exitCode=result.summary.result==UnityEditor.Build.Reporting.BuildResult.Succeeded&&result.summary.totalErrors==0?0:1;
+   if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-antialiasing-v1"),"msaa-2-4-8-combined-smaa-export-world-ssaa-2-v1\n");
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-export-profile-v1"),"cpu-wall-spans-v1\n");
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-merged-export-v1"),"gpu-state-frame-v1\n");
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-queued-export-v1"),"gpu-state-queue-v1\n");

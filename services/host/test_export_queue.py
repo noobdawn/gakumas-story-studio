@@ -31,7 +31,7 @@ class ExportQueueTest(unittest.TestCase):
 
     def job(self):
         j=SimpleNamespace(queue_capacity=4,queue_session='a'*32,queue_enqueued=0,count=0,
-            gpu_completed=0,frames=9,width=1920,height=1080,native_post=True,profile=True,start_frame=900,run_id='test')
+            supersampling=2,gpu_completed=0,frames=9,width=1920,height=1080,native_post=True,profile=True,start_frame=900,run_id='test')
         def write(row):j.count+=1;j.gpu_completed=row['gpuCompleted']
         j.write_gpu=write
         return j
@@ -53,12 +53,12 @@ class ExportQueueTest(unittest.TestCase):
         with self.assertRaises(ValueError):require_session(self.job(),{'queueSession':'old'})
 
     def test_host_owns_identity_and_validates_all_frames_before_send(self):
-        j=self.job();state=dict(token='bad',kind='gpu-export-cancel',exportIndex=99,queueFrames=[{}],frameWidth=16)
+        j=self.job();state=dict(token='bad',kind='gpu-export-cancel',exportIndex=99,queueFrames=[{}],frameWidth=16,frameSupersampling=99)
         rows=[dict(index=i,state=state) for i in range(2)]
         message=dict(queueSession=j.queue_session,frames=rows)
         result=frames(j,message,'auth',lambda p:p.update(mediaDraws=[]))
         self.assertEqual([r['exportIndex'] for r in result],[0,1]);self.assertEqual([r['frameIndex'] for r in result],[900,901])
-        self.assertTrue(all(r['token']=='auth' and r['queueFrames'] is None and r['frameWidth']==1920 for r in result))
+        self.assertTrue(all(r['token']=='auth' and r['queueFrames'] is None and r['frameWidth']==1920 and r['frameSupersampling']==2 for r in result))
         self.assertEqual(state['token'],'bad')
         rows[1]['index']=0
         with self.assertRaises(ValueError):frames(j,message,'auth',lambda p:None)

@@ -55,7 +55,7 @@ public class CreatorPrototypePlayer : MonoBehaviour {
  [Serializable] class EyeMaterialData { public string code,effect; public int tileX,tileY,fps; }
  class EyeMaterialResource { public EyeMaterialData data; public Texture2D[] textures; }
  class FaceInstance { public Mesh mesh, decalMesh; public Vector3[] original; public string last=null; public GameObject[] roundEyes; public FaceBoneData boneData; public Matrix4x4[] eyeBinds; public MeshRenderer faceRenderer; public int eyeMaterialIndex=-1; public Material originalEye,eyeMaterial; public Dictionary<string,CreatorFaceDecal> decals=new Dictionary<string,CreatorFaceDecal>(); public Dictionary<string,GameObject> headEffects=new Dictionary<string,GameObject>(); }
- [Serializable] class Command { public Command[] queueFrames; public int queueCapacity; public string queueSession; public bool profileExport; public bool skipPreRender,gpuColor,gpuVideo; public int frameIndex,exportIndex,gpuVideoFps; public string runId; public CreatorCompositionState composition; public CreatorEffectState postEffects; public CreatorMediaDraw[] mediaDraws;public string mediaSelectedId;public bool mediaEditable,mediaSnap; public CreatorRenderSettings renderSettings; public CreatorUIDraw[] uiDraws; public bool captureUiLayer; public CreatorUIRect[] uiRects; public bool includeUiOverlay; public CreatorMotionLayer[] motionLayers; public string token, kind, thumbnailTarget, sceneId, subtitleText, subtitleSpeaker, subtitleStyle, subtitleColor, subtitleColorEnd, motionId, idleMotionId, blendMotionId, editorSelectedId, editorSelectedKind, editorPropId, gizmoTestPhase, editorToolMode; public ActorState[] actorInstances; public SceneProp[] sceneProps; public int id, frameWidth, frameHeight, gizmoTestAxis; public float[] actorPosition, actorRotation, actorScale, editorSelectedScale, cameraPosition, cameraRotation; public float fov; public float motionTime, idleMotionTime, outlineWidth, blendMotionTime, blendWeight, gizmoTestDelta; public bool motionActive, motionLoop, physicsEnabled, hasOutlineSettings, hasArrangement, sceneVisible, cameraEnabled, blendActive, editorCanMove, includeEditorGizmo; }
+ [Serializable] class Command { public Command[] queueFrames; public int queueCapacity; public string queueSession; public bool profileExport; public bool skipPreRender,gpuColor,gpuVideo; public int frameIndex,exportIndex,gpuVideoFps; public string runId; public CreatorCompositionState composition; public CreatorEffectState postEffects; public CreatorMediaDraw[] mediaDraws;public string mediaSelectedId;public bool mediaEditable,mediaSnap; public CreatorRenderSettings renderSettings; public CreatorUIDraw[] uiDraws; public bool captureUiLayer; public CreatorUIRect[] uiRects; public bool includeUiOverlay; public CreatorMotionLayer[] motionLayers; public string token, kind, thumbnailTarget, sceneId, subtitleText, subtitleSpeaker, subtitleStyle, subtitleColor, subtitleColorEnd, motionId, idleMotionId, blendMotionId, editorSelectedId, editorSelectedKind, editorPropId, gizmoTestPhase, editorToolMode; public ActorState[] actorInstances; public SceneProp[] sceneProps; public int id, frameWidth, frameHeight, frameSupersampling, gizmoTestAxis; public float[] actorPosition, actorRotation, actorScale, editorSelectedScale, cameraPosition, cameraRotation; public float fov; public float motionTime, idleMotionTime, outlineWidth, blendMotionTime, blendWeight, gizmoTestDelta; public bool motionActive, motionLoop, physicsEnabled, hasOutlineSettings, hasArrangement, sceneVisible, cameraEnabled, blendActive, editorCanMove, includeEditorGizmo; }
  [Serializable] class SkirtTopology { public string source; public int vertexCount; public int[] indices; }
  [Serializable] class PhysicsMetric { public string actor,surfaceDescription; public int overlaps,pairs,surfaceSamples,surfaceBefore,surfaceAfter,triangleSamples,triangleBefore,triangleAfter; public float maxDepth,totalDepth,surfaceDepthBefore,surfaceDepthAfter,triangleDepthBefore,triangleDepthAfter; }
  [Serializable] class Reply { public string queueSession; public bool queueAdmitted; public int queueEnqueued,queueSubmitted,queueReported,queuePendingBytes,queueHighWater,queueByteHighWater,queueFullCount; public double queueIdleMs; public Reply[] queueResults; public int gpuAccepted,gpuCompleted; public int exportTargetFrameRate,exportVSyncCount; public string gpuOutput; public CreatorExportTiming exportTiming; public CreatorScreenMedia.EditEvent mediaEvent; public bool sceneReady; public string sceneId; public int id; public bool ok; public string error; public PhysicsMetric[] physicsMetrics; public CreatorSceneGizmo.EditEvent gizmoEvent; public string gizmoToolMode; }
@@ -68,7 +68,7 @@ public class CreatorPrototypePlayer : MonoBehaviour {
  bool exportQueueClosing;
  double exportQueueIdleMs;long exportQueueIdleStart;
 
- string storyError;public Shader postEffectShader;CreatorPostEffects storyEffects;CreatorDialogueLayer storyDialogue;
+ string storyError;public Shader postEffectShader;CreatorPostEffects storyEffects;int exportWorldScale=1;CreatorDialogueLayer storyDialogue;
  public Shader selectionShellShader, gizmoAxisShader; CreatorSceneGizmo editorGizmo;CreatorScreenMedia screenMedia;
  public Shader fallbackShader;
  public Shader faceDecalShader;
@@ -199,7 +199,7 @@ public class CreatorPrototypePlayer : MonoBehaviour {
  static Vector3 ScaleOrOne(float[] a)=>a==null||a.Length==0?Vector3.one:new Vector3(a[0],a[1],a[2]);
  static bool ValidBodyName(string n)=>!string.IsNullOrEmpty(n)&&System.Text.RegularExpressions.Regex.IsMatch(n,"^mdl_chr_[a-z0-9]+-[a-z0-9]+-[a-z0-9]+_body$");
  IEnumerator CaptureAfterFrames() { yield return new WaitForSecondsRealtime(1.5f); yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output,"render.png")); }
- void ValidateCommand(Command cmd) { if(cmd==null||cmd.token!=token) throw new Exception("Invalid session"); if(cmd.kind=="state-frame"&&(!cmd.gpuVideo||cmd.exportIndex<0||cmd.exportIndex>=216000||cmd.captureUiLayer||cmd.frameWidth<16||cmd.frameHeight<16||cmd.frameWidth>1920||cmd.frameHeight>1920))throw new Exception("Invalid merged GPU frame");if(cmd.queueFrames!=null&&cmd.queueFrames.Length>0&&cmd.kind!="gpu-export-enqueue")throw new Exception("Unexpected queued frames");if(cmd.renderSettings!=null)cmd.renderSettings.Validate(); if(cmd.kind=="gizmo-test") { if(Array.IndexOf(Environment.GetCommandLineArgs(),"-creator-gizmo-test")<0||cmd.gizmoTestAxis<0||cmd.gizmoTestAxis>2||!new[]{"begin","move","end","key"}.Contains(cmd.gizmoTestPhase)||float.IsNaN(cmd.gizmoTestDelta)||float.IsInfinity(cmd.gizmoTestDelta))throw new Exception("Gizmo test unavailable"); } else if(cmd.kind=="thumbnail") { if(cmd.thumbnailTarget!="actor" && cmd.thumbnailTarget!="scene")throw new Exception("Unknown thumbnail target"); } else if(cmd.kind=="gpu-export-enqueue") {
+ void ValidateCommand(Command cmd) { if(cmd==null||cmd.token!=token) throw new Exception("Invalid session"); if(cmd.frameSupersampling<0||cmd.frameSupersampling>2)throw new Exception("Invalid export supersampling"); if(cmd.kind=="state-frame"&&(!cmd.gpuVideo||cmd.exportIndex<0||cmd.exportIndex>=216000||cmd.captureUiLayer||cmd.frameWidth<16||cmd.frameHeight<16||cmd.frameWidth>1920||cmd.frameHeight>1920))throw new Exception("Invalid merged GPU frame");if(cmd.queueFrames!=null&&cmd.queueFrames.Length>0&&cmd.kind!="gpu-export-enqueue")throw new Exception("Unexpected queued frames");if(cmd.renderSettings!=null)cmd.renderSettings.Validate(); if(cmd.kind=="gizmo-test") { if(Array.IndexOf(Environment.GetCommandLineArgs(),"-creator-gizmo-test")<0||cmd.gizmoTestAxis<0||cmd.gizmoTestAxis>2||!new[]{"begin","move","end","key"}.Contains(cmd.gizmoTestPhase)||float.IsNaN(cmd.gizmoTestDelta)||float.IsInfinity(cmd.gizmoTestDelta))throw new Exception("Gizmo test unavailable"); } else if(cmd.kind=="thumbnail") { if(cmd.thumbnailTarget!="actor" && cmd.thumbnailTarget!="scene")throw new Exception("Unknown thumbnail target"); } else if(cmd.kind=="gpu-export-enqueue") {
  if(cmd.queueFrames==null||cmd.queueFrames.Length<1||cmd.queueFrames.Length>4)throw new Exception("Invalid queued frame batch");
  foreach(var frame in cmd.queueFrames){if(frame==null||frame.kind!="state-frame")throw new Exception("Invalid queued state");ValidateCommand(frame);}
  } else if(cmd.kind=="gpu-export-status") {
@@ -449,16 +449,17 @@ w.result=JsonUtility.ToJson(new Reply{id=c.id,ok=true,gpuOutput=gpuVideoExport.O
   var c=work.command;
   if(c.frameWidth!=gpuVideoExport.Width||c.frameHeight!=gpuVideoExport.Height)throw new Exception("GPU export frame size changed");
   if(c.captureUiLayer||composition==null&&!storyEffects.Enabled)throw new Exception("GPU export requires the native final composition");
-  var previous=RenderTexture.active;var oldTarget=cameraObject.targetTexture;RenderTexture rt=null;
+  var previous=RenderTexture.active;var oldTarget=cameraObject.targetTexture;var oldScale=exportWorldScale;RenderTexture rt=null;
   CreatorExportProfiler.Current=work.timing;
   try {
+   exportWorldScale=Math.Max(1,c.frameSupersampling);
    if(!c.includeEditorGizmo)editorGizmo.SetVisible(false);
    rt=new RenderTexture(c.frameWidth,c.frameHeight,24,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);rt.antiAliasing=1;cameraObject.targetTexture=rt;FitBackground();
-   if(!c.skipPreRender){using(CreatorExportProfiler.Measure("preRenderMs"))cameraObject.Render();}else work.timing?.Count("preRenderSkipped");
+   if(!c.skipPreRender&&exportWorldScale==1){using(CreatorExportProfiler.Measure("preRenderMs"))cameraObject.Render();}else work.timing?.Count("preRenderSkipped");
    using(CreatorExportProfiler.Measure("effectsClearMs"))storyEffects.Clear();
    RenderTexture story;using(CreatorExportProfiler.Measure("storyMs"))story=RenderStory(c.frameWidth,c.frameHeight);
    gpuVideoExport.Submit(story,c.exportIndex);
-  }finally{CreatorExportProfiler.Current=null;editorGizmo.SetVisible(true);cameraObject.targetTexture=oldTarget;RenderTexture.active=previous;if(rt){rt.Release();Destroy(rt);}}
+  }finally{exportWorldScale=oldScale;CreatorExportProfiler.Current=null;editorGizmo.SetVisible(true);cameraObject.targetTexture=oldTarget;RenderTexture.active=previous;if(rt){rt.Release();Destroy(rt);}}
  }
  IEnumerator FinishGpuExport(Work work,bool cancel) {
   if(exportQueue!=null){
@@ -497,14 +498,16 @@ w.result=JsonUtility.ToJson(new Reply{id=c.id,ok=true,gpuOutput=gpuVideoExport.O
   yield return null;
   if(work.timing!=null)work.timing.Add("settleWaitMs",CreatorExportProfiler.Elapsed(waitStart));
   CreatorExportProfiler.Current=work.timing;
-  var previous=RenderTexture.active; RenderTexture rt=null; Texture2D image=null; var oldTarget=cameraObject.targetTexture;
+  var previous=RenderTexture.active; RenderTexture rt=null,downsample=null; Texture2D image=null; var oldTarget=cameraObject.targetTexture;var oldScale=exportWorldScale;
   try {
+   exportWorldScale=Math.Max(1,work.command.frameSupersampling);bool nativeComposition=composition!=null||storyEffects.Enabled;
    int width=work.command.frameWidth,height=work.command.frameHeight;if(!work.command.includeEditorGizmo)editorGizmo.SetVisible(false);
-   rt=new RenderTexture(width,height,24,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);rt.antiAliasing=1;cameraObject.targetTexture=rt;FitBackground();if(!work.command.skipPreRender||(composition==null&&!storyEffects.Enabled)){using(CreatorExportProfiler.Measure("preRenderMs"))cameraObject.Render();}else if(work.timing!=null)work.timing.Count("preRenderSkipped");RenderTexture.active=rt;
-   if(composition!=null||storyEffects.Enabled){using(CreatorExportProfiler.Measure("effectsClearMs"))storyEffects.Clear();RenderTexture story;using(CreatorExportProfiler.Measure("storyMs"))story=RenderStory(width,height);using(CreatorExportProfiler.Measure("readDisplayMs")){image=CreatorLinearRendering.ReadDisplay(story,work.command.gpuColor);}}else{using(CreatorExportProfiler.Measure("readDisplayMs")){image=CreatorLinearRendering.ReadDisplay(rt,work.command.gpuColor);}using(CreatorExportProfiler.Measure("mediaCompositeMs"))screenMedia.Composite(image);}
+   int captureScale=nativeComposition?1:exportWorldScale;
+   rt=new RenderTexture(width*captureScale,height*captureScale,24,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);rt.antiAliasing=linearRendering.Settings.MsaaSamples;cameraObject.targetTexture=rt;FitBackground();if(!nativeComposition||!work.command.skipPreRender&&exportWorldScale==1){using(CreatorExportProfiler.Measure("preRenderMs"))cameraObject.Render();}else if(work.timing!=null)work.timing.Count("preRenderSkipped");RenderTexture.active=rt;
+   if(composition!=null||storyEffects.Enabled){using(CreatorExportProfiler.Measure("effectsClearMs"))storyEffects.Clear();RenderTexture story;using(CreatorExportProfiler.Measure("storyMs"))story=RenderStory(width,height);using(CreatorExportProfiler.Measure("readDisplayMs")){image=CreatorLinearRendering.ReadDisplay(story,work.command.gpuColor);}}else{RenderTexture display=rt;if(exportWorldScale>1){downsample=RenderTexture.GetTemporary(width,height,0,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);rt.filterMode=FilterMode.Bilinear;Graphics.Blit(rt,downsample);display=downsample;}using(CreatorExportProfiler.Measure("readDisplayMs")){image=CreatorLinearRendering.ReadDisplay(display,work.command.gpuColor);}using(CreatorExportProfiler.Measure("mediaCompositeMs"))screenMedia.Composite(image);}
    if(work.command.includeUiOverlay&&composition==null&&!storyEffects.Enabled){using(CreatorExportProfiler.Measure("uiOverlayMs")){CreatorUIOverlay.Composite(image,uiRects);uiGraph.Composite(image);}}if(work.command.captureUiLayer){using(CreatorExportProfiler.Measure("uiCaptureMs"))uiGraph.Capture(Path.Combine(output,"export-ui.png"),width,height);}byte[] png;using(CreatorExportProfiler.Measure("pngMs"))png=image.EncodeToPNG();using(CreatorExportProfiler.Measure("fileWriteMs"))File.WriteAllBytes(Path.Combine(output,"export-frame.png"),png);if(work.timing!=null){work.timing.totalMs=CreatorExportProfiler.Elapsed(work.started);work.timing.Snapshot();}work.result=JsonUtility.ToJson(new Reply{id=work.command.id,ok=true,exportTiming=work.timing});
   } catch(Exception e) { work.result=JsonUtility.ToJson(new Reply{id=work.command.id,ok=false,error=e.Message}); }
-  finally { CreatorExportProfiler.Current=null;editorGizmo.SetVisible(true);cameraObject.targetTexture=oldTarget;RenderTexture.active=previous;if(image)Destroy(image);if(rt){rt.Release();Destroy(rt);}CompleteWork(work); }
+  finally { exportWorldScale=oldScale;CreatorExportProfiler.Current=null;editorGizmo.SetVisible(true);cameraObject.targetTexture=oldTarget;RenderTexture.active=previous;if(image)Destroy(image);if(downsample)RenderTexture.ReleaseTemporary(downsample);if(rt){rt.Release();Destroy(rt);}CompleteWork(work); }
  }
  void CaptureThumbnail(string target) {
   if(sceneBusy)throw new Exception("Scene is loading");
@@ -521,7 +524,7 @@ w.result=JsonUtility.ToJson(new Reply{id=c.id,ok=true,gpuOutput=gpuVideoExport.O
    foreach(var r in previousFlags.Keys)r.forceRenderingOff=true;
    if(target=="actor") { cam.clearFlags=CameraClearFlags.SolidColor; cam.backgroundColor=new Color(.18f,.2f,.23f,1); cam.fieldOfView=35; cam.transform.position=body.transform.position+new Vector3(0,1,3); cam.transform.LookAt(body.transform.position+new Vector3(0,1,0)); }
    else cam.transform.SetPositionAndRotation(cameraObject.transform.position,cameraObject.transform.rotation);
-   rt=new RenderTexture(256,256,24,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);cam.targetTexture=rt;cam.Render();RenderTexture.active=rt;image=CreatorLinearRendering.ReadDisplay(rt);File.WriteAllBytes(Path.Combine(output,"thumbnail-"+target+".png"),image.EncodeToPNG());
+   rt=new RenderTexture(256,256,24,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);rt.antiAliasing=linearRendering.Settings.MsaaSamples;cam.targetTexture=rt;cam.Render();RenderTexture.active=rt;image=CreatorLinearRendering.ReadDisplay(rt);File.WriteAllBytes(Path.Combine(output,"thumbnail-"+target+".png"),image.EncodeToPNG());
   } finally { RenderTexture.active=previous; cam.targetTexture=null; if(image)Destroy(image); if(rt){rt.Release();Destroy(rt);} Destroy(go); foreach(var item in previousFlags)if(item.Key)item.Key.forceRenderingOff=item.Value; editorGizmo.SetVisible(true); }
  }
  Avatar BuildAvatar(GameObject target) {
@@ -609,7 +612,7 @@ w.result=JsonUtility.ToJson(new Reply{id=c.id,ok=true,gpuOutput=gpuVideoExport.O
    var output=storyEffects.Blank(w,h);
    var actors=body.GetComponentsInChildren<Renderer>(true).Concat(copies.Values.Where(x=>x).SelectMany(x=>x.GetComponentsInChildren<Renderer>(true))).ToArray();
    foreach(var n in composition.nodes){Texture layer=null;
-    if(n.kind=="world"){using(CreatorExportProfiler.Measure("compositionWorldMs"))layer=storyEffects.World(cameraObject,w,h,actors,FitBackground);}
+    if(n.kind=="world"){using(CreatorExportProfiler.Measure("compositionWorldMs"))layer=storyEffects.World(cameraObject,w,h,actors,FitBackground,exportWorldScale);}
     else if(n.kind=="media"){using(CreatorExportProfiler.Measure("compositionMediaMs"))layer=CompositionMedia(n.id,n.effects,w,h);}
     else if(n.kind=="effect"){using(CreatorExportProfiler.Measure("compositionEffectMs")){output=storyEffects.Copy(storyEffects.ApplyLayers(output,n.effects,w,h),w,h);}continue;}
     else if(n.kind=="transition"){using(CreatorExportProfiler.Measure("compositionTransitionMs")){var left=storyEffects.Copy(CompositionMedia(n.leftId,n.leftEffects,w,h),w,h);var right=CompositionMedia(n.rightId,n.rightEffects,w,h);layer=storyEffects.Transition(left,right,n.transition,n.progress,w,h);}}
@@ -637,7 +640,7 @@ w.result=JsonUtility.ToJson(new Reply{id=c.id,ok=true,gpuOutput=gpuVideoExport.O
  RenderTexture RenderStoryContents(int width,int height){
   if(composition!=null)return RenderComposition(width,height);
   var actors=body.GetComponentsInChildren<Renderer>(true).Concat(copies.Values.Where(x=>x).SelectMany(x=>x.GetComponentsInChildren<Renderer>(true))).Distinct().ToArray();
-  var output=storyEffects.World(cameraObject,width,height,actors,FitBackground);
+  var output=storyEffects.World(cameraObject,width,height,actors,FitBackground,exportWorldScale);
   using(CreatorExportProfiler.Measure("storyMediaMs"))storyEffects.Overlay(output,screenMedia.Render(width,height),"media");
   float scale=Mathf.Min(width/960f,height/540f);Texture panel=null,name=null;
   if(subtitleStyle=="game"&&dialogueBackground&&dialogueFrame&&dialogueName){panel=DialoguePanel(Mathf.RoundToInt(width*.84f),Mathf.RoundToInt(height*.25f),scale);name=NameGradient(Mathf.RoundToInt(width*.84f*.44f),Mathf.RoundToInt(height*.07f),Mathf.RoundToInt(height*.07f)/(float)dialogueName.height);}

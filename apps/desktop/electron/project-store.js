@@ -30,6 +30,7 @@ function validate(doc) {
   const duration=s.globalSettings?.duration??30, fps=s.globalSettings?.fps??30, aspect=s.globalSettings?.aspect??'16:9';
   requireValid(finite(duration)&&duration>=1&&duration<=3600&&[24,25,30,60].includes(fps)&&['16:9','9:16','1:1','4:3'].includes(aspect), '演出设置');
   if(s.globalSettings?.exportQuality!==undefined)requireValid(['720','1080'].includes(s.globalSettings.exportQuality),'导出分辨率');
+  if(s.globalSettings?.exportSupersampling!==undefined)requireValid([1,2].includes(s.globalSettings.exportSupersampling),'导出超采样');
   requireValid(finite(s.current) && s.current>=0 && s.current<=duration && finite(s.fov), '播放时间或 FOV');
   if(s.projectId!==undefined) requireValid(typeof s.projectId==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.projectId), '工程标识');
   if(s.sceneId!==undefined) requireValid(s.sceneId===null||(typeof s.sceneId==='string'&&/^(?:2d-env_2d_|3d-env_3d_)[A-Za-z0-9_-]{1,160}$/.test(s.sceneId))||['trainingroom','classroom','courtyard','dormitory','rooftop'].includes(s.sceneId), '场景素材');

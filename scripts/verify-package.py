@@ -12,6 +12,7 @@ def main():
     parser.add_argument('package',type=Path)
     args=parser.parse_args()
     root=args.package.resolve()
+    assert (root/'runtime/player/creator-antialiasing-v1').is_file(), 'Antialiasing capability missing'
     assert (root/'runtime/player/creator-production-gpu-v1').is_file(), 'Production GPU capability missing'
     assert (root/'runtime/player/CreatorPlayer_Data/Plugins/x86_64/GSSGpuExport.dll').is_file(), 'GPU plugin missing'
     manifest=json.loads((root/'manifest-sha256.json').read_text('utf-8'))

@@ -19,7 +19,7 @@ public sealed class CreatorPostEffects:IDisposable {
  public void Set(CreatorEffectState s){
   if(s!=null){if(float.IsNaN(s.time)||float.IsInfinity(s.time)||s.time<0||s.time>3600||s.targets==null||s.targets.Length>5)throw new Exception("Invalid story effects");var ids=new HashSet<string>();foreach(var t in s.targets){if(t==null||!new[]{"background","actors","media","dialogue","transition"}.Contains(t.target)||!ids.Add(t.target)||t.layers==null||t.layers.Length>32)throw new Exception("Invalid effect target");ValidateLayers(t.layers);}}state=s;
  }
- RenderTexture Make(int w,int h,int depth=0){var r=RenderTexture.GetTemporary(w,h,depth,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);r.filterMode=FilterMode.Bilinear;r.wrapMode=TextureWrapMode.Clamp;temporaries.Add(r);return r;}
+ RenderTexture Make(int w,int h,int depth=0,int samples=1){var r=RenderTexture.GetTemporary(w,h,depth,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear,samples);r.filterMode=FilterMode.Bilinear;r.wrapMode=TextureWrapMode.Clamp;temporaries.Add(r);return r;}
  public void Clear(){foreach(var r in temporaries)RenderTexture.ReleaseTemporary(r);temporaries.Clear();}
  CreatorEffectLayer[] Layers(string target)=>state?.targets?.FirstOrDefault(t=>t.target==target)?.layers??Array.Empty<CreatorEffectLayer>();
  static bool Range(float v,float min,float max)=>!float.IsNaN(v)&&!float.IsInfinity(v)&&v>=min&&v<=max;
@@ -57,13 +57,21 @@ public sealed class CreatorPostEffects:IDisposable {
  struct Draw {public Renderer renderer;public Material material;public int submesh,pass,queue;public float distance;}
  static int Pass(Material m,string mode){var tag=new ShaderTagId("LightMode");for(int p=0;p<m.passCount;p++)if(m.shader.FindPassTagValue(p,tag).name==mode)return p;return -1;}
  static List<Draw> Draws(Camera camera,Renderer[] actors){var list=new List<Draw>();foreach(var r in actors){if(!r||!r.enabled||r.forceRenderingOff||!r.gameObject.activeInHierarchy)continue;var mats=r.sharedMaterials;for(int i=0;i<mats.Length;i++){var m=mats[i];if(!m)continue;int pass=Pass(m,"VLActor");if(pass<0)pass=Pass(m,"UniversalForward");if(pass<0)pass=Pass(m,"SRPDefaultUnlit");if(pass<0)pass=0;list.Add(new Draw{renderer=r,material=m,submesh=i,pass=pass,queue=m.renderQueue,distance=Vector3.Distance(camera.transform.position,r.bounds.center)});if(r.gameObject.layer==30&&m.renderQueue<=2500){pass=Pass(m,"UniversalForwardOutline");if(pass>=0)list.Add(new Draw{renderer=r,material=m,submesh=i,pass=pass,queue=2500,distance=0});}}}return list.OrderBy(d=>d.queue).ThenBy(d=>d.queue>2500?-d.distance:d.distance).ToList();}
- RenderTexture Coverage(Camera camera,RenderTexture full,List<Draw> draws,Color clear){var target=Make(full.width,full.height);var cmd=new CommandBuffer{name="Story actor coverage"};try{cmd.SetRenderTarget(new RenderTargetIdentifier(target),new RenderTargetIdentifier(full));cmd.ClearRenderTarget(false,true,clear);cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix,GL.GetGPUProjectionMatrix(camera.projectionMatrix,true));foreach(var d in draws)cmd.DrawRenderer(d.renderer,d.material,d.submesh,d.pass);Graphics.ExecuteCommandBuffer(cmd);}finally{cmd.Release();}return target;}
- public RenderTexture World(Camera camera,int w,int h,Renderer[] actors,Action fit){
-  var old=camera.targetTexture;var previous=RenderTexture.active;var full=Make(w,h,24);var actorFlags=actors.Where(r=>r).Select(r=>(r,r.shadowCastingMode)).ToArray();
+ RenderTexture Coverage(Camera camera,RenderTexture full,List<Draw> draws,Color clear){var target=Make(full.width,full.height,0,full.antiAliasing);var cmd=new CommandBuffer{name="Story actor coverage"};try{cmd.SetRenderTarget(new RenderTargetIdentifier(target),new RenderTargetIdentifier(full));cmd.ClearRenderTarget(false,true,clear);cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix,GL.GetGPUProjectionMatrix(camera.projectionMatrix,true));foreach(var d in draws)cmd.DrawRenderer(d.renderer,d.material,d.submesh,d.pass);Graphics.ExecuteCommandBuffer(cmd);}finally{cmd.Release();}return target;}
+ public RenderTexture World(Camera camera,int w,int h,Renderer[] actors,Action fit,int scale=1){
+  if(scale!=1&&scale!=2)throw new Exception("Invalid world supersampling");
+  var previous=RenderTexture.active;
+  try{var world=WorldInner(camera,w*scale,h*scale,actors,fit);return scale==1?world:Copy(world,w,h);}
+  finally{RenderTexture.active=previous;}
+ }
+ RenderTexture WorldInner(Camera camera,int w,int h,Renderer[] actors,Action fit){
+  var pipeline=GraphicsSettings.currentRenderPipeline as UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset;
+  int samples=camera.allowMSAA&&pipeline?pipeline.msaaSampleCount:1;
+  var old=camera.targetTexture;var previous=RenderTexture.active;var full=Make(w,h,24,samples);var actorFlags=actors.Where(r=>r).Select(r=>(r,r.shadowCastingMode)).ToArray();
   try{camera.targetTexture=full;fit();using(CreatorExportProfiler.Measure("worldRenderMs"))camera.Render();if(Layers("background").Length==0&&Layers("actors").Length==0)return full;
    // Take the coverage while native camera globals and original depth are current.
    var draws=Draws(camera,actors);RenderTexture black,white;using(CreatorExportProfiler.Measure("coverageMs")){using(CreatorExportProfiler.Measure("coverageRenderMs"))black=Coverage(camera,full,draws,Color.black);using(CreatorExportProfiler.Measure("coverageRenderMs"))white=Coverage(camera,full,draws,Color.white);}
-   var background=Make(w,h,24);foreach(var flag in actorFlags)flag.r.shadowCastingMode=ShadowCastingMode.ShadowsOnly;
+   var background=Make(w,h,24,samples);foreach(var flag in actorFlags)flag.r.shadowCastingMode=ShadowCastingMode.ShadowsOnly;
    camera.targetTexture=background;fit();using(CreatorExportProfiler.Measure("backgroundRenderMs"))camera.Render();foreach(var flag in actorFlags)flag.r.shadowCastingMode=flag.shadowCastingMode;
    var foreground=Make(w,h);material.SetTexture("_Background",background);material.SetTexture("_Black",black);material.SetTexture("_White",white);Graphics.Blit(full,foreground,material,2);
    Texture processedBg,processedActor;using(CreatorExportProfiler.Measure("worldFilterMs")){processedBg=Apply(background,"background",w,h);processedActor=Apply(foreground,"actors",w,h);}var output=Make(w,h);material.SetTexture("_Clean",background);material.SetTexture("_Background",processedBg);material.SetTexture("_Actors",processedActor);material.SetTexture("_Black",black);material.SetTexture("_White",white);Graphics.Blit(full,output,material,3);return output;

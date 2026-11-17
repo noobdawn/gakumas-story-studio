@@ -3,7 +3,7 @@
     eyeHighlight:{value:1,min:0,max:3},directLight:{value:1,min:0,max:3},indirectLight:{value:.85,min:0,max:3},emission:{value:1,min:0,max:3},
     shadows:{value:true},decals:{value:true},ao:{value:true},aoStrength:{value:.5,min:0,max:1},aoRadius:{value:.5,min:.05,max:2},
     reflections:{value:true},reflectionProbes:{value:true},ssr:{value:false},reflectionIntensity:{value:1,min:0,max:2},reflectionSmoothness:{value:.6,min:0,max:.99},ssrDistance:{value:25,min:1,max:100},ssrThickness:{value:.2,min:.01,max:1},ssrQuality:{value:1,choices:[0,1,2]},
-    tonemapping:{value:1,choices:[0,1,2]},exposure:{value:0,min:-4,max:4},bloom:{value:true},bloomIntensity:{value:.15,min:0,max:2},bloomThreshold:{value:1,min:0,max:5},antialiasing:{value:2,choices:[0,1,2]}
+    tonemapping:{value:1,choices:[0,1,2]},exposure:{value:0,min:-4,max:4},bloom:{value:true},bloomIntensity:{value:.15,min:0,max:2},bloomThreshold:{value:1,min:0,max:5},antialiasing:{value:2,choices:[0,1,2,3,4,5,6]}
   };
   function normalize(input){
     if(input!==undefined&&(!input||typeof input!=='object'||Array.isArray(input)))throw Error('渲染设置格式无效');
@@ -22,7 +22,7 @@
     <fieldset class="render-category"><legend>阴影与环境遮蔽</legend>${check('shadows','场景阴影')}${check('ao','环境遮蔽（AO）')}${number('aoStrength','AO 强度')}${number('aoRadius','AO 半径')}</fieldset>
     <fieldset class="render-category"><legend>反射</legend>${check('reflections','启用反射')}${check('reflectionProbes','场景自带的环境反射')}${number('reflectionIntensity','反射强度')}${number('reflectionSmoothness','最低材质平滑度')}<p class="hint">使用解包场景中的烘焙反射，遵循原材质平滑度；烘焙内容不包含后来添加的角色。</p>${check('ssr','补充动态反射（SSR）')}${select('ssrQuality','追踪质量',['快速 · 半分辨率 / 32 步','标准 · 半分辨率 / 64 步','精细 · 全分辨率 / 96 步'])}${number('ssrDistance','最大追踪距离（米）','1')}${number('ssrThickness','深度容差（米）','.01')}<p class="hint">作用于光滑的 3D 场景表面。动态反射只能反射屏幕内已有的可见内容；屏幕边缘会淡出，透明物体和屏幕外物体不参与追踪。</p></fieldset>
     <fieldset class="render-category"><legend>后处理</legend>${select('tonemapping','色调映射',['关闭','Neutral','ACES'])}${number('exposure','曝光补偿（EV）','.1')}${check('bloom','泛光（Bloom）')}${number('bloomIntensity','泛光强度')}${number('bloomThreshold','泛光阈值')}<p class="hint">2D 背景下自动停用后处理与反射，切回 3D 后恢复设置。</p></fieldset>
-    <fieldset class="render-category"><legend>抗锯齿</legend>${select('antialiasing','方式',['关闭','FXAA','SMAA High'])}<p class="hint">渲染使用 Linear HDR。预览和导出共用这些工程设置。</p></fieldset>`;
+    <fieldset class="render-category"><legend>抗锯齿</legend>${select('antialiasing','方式',['关闭','FXAA','SMAA High','MSAA 2×','MSAA 4×','MSAA 8×','MSAA 4× + SMAA High'])}<p class="hint">预览和导出共用这些工程设置。</p></fieldset>`;
   }
   function change(value,key,raw){
     if(!Object.hasOwn(schema,key))throw Error('未知的渲染参数');

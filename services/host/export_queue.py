@@ -30,6 +30,7 @@ def frames(job, message, token, prepare):
             raise ValueError('导出批次帧序无效')
         authoritative = dict(token=token, id=row.get('id', 0), kind='state-frame',
             frameWidth=job.width, frameHeight=job.height, captureUiLayer=False, includeUiOverlay=job.native_post,
+            frameSupersampling=job.supersampling,
             profileExport=job.profile, frameIndex=job.start_frame+index, runId=job.run_id,
             skipPreRender=False, gpuColor=False, gpuVideo=True, exportIndex=index,
             queueSession=job.queue_session, queueCapacity=0, queueFrames=None)
