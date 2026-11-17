@@ -1,5 +1,7 @@
 # 模块与运行数据
 
+2026-11-17 动画片段属性：`animation-layer-ui.js` 提供独立素材信息和搜索替换弹窗，`animation-layers.js.replaceMotion` 只变更 `assetId`、清零旧 `sourceOffset`，叠加层按新素材调整 `blendMode`。不另建片段／轨道或改名，不改剧情绑定、排时、循环及渐变。沿用 `remember`、`render` 和现有预览／导出求值、工程序列化；弹窗提交时复查工程／轨道／片段身份、锁定和当前资源定义。
+
 2026-11-17 抗锯齿设置：工程 `render.antialiasing` 保留 0/1/2=关闭/FXAA/SMAA High，新增 3/4/5=MSAA 2/4/8、6=MSAA 4 + SMAA High。相机、URP asset、世界颜色/深度及 coverage 附件同步样本数，最终合成与编码输入仍为单采样；缩略图目标同样遵循选择。场景 G-buffer、原始描边权重和树叶材质不变，树叶透空差异已由用户接受。
 
 导出设置 `globalSettings.exportSupersampling` 只接受整数 1/2，缺省 1；宿主作业将权威 `frameSupersampling` 传入串行和队列帧，帧中自带状态不能覆盖它。Player `creator-antialiasing-v1` 标记用于拒绝旧 Player 静默忽略超采样；打包要求此标记。World 渲染按该倍率放大并线性缩回，再沿原节点顺序合成；非原生兼容捕获也在叠加媒体/UI前缩回。捕获倍率、相机目标和活动纹理均由 finally 恢复。只在超采样的原生合成下跳过无效前置相机渲染，默认路径保持原行为。控制接口 `project.settings` 可选传入 `render` 部分参数及 `exportSupersampling`，沿用撤销与重绘。

@@ -42,7 +42,7 @@ async function run(){
   await js(`step=2;show();$('#asset-settings-page>details').open=true;$('.setup-content').scrollTop=99999`);
   assert.ok(await js(`$('.setup-content').scrollTop>0`));
   // The editor shell uses the real markup, styles and docking script, with no backend app.
-  const html=fs.readFileSync(path.join(ui,'index.html'),'utf8').replace('<head>','<head><base href="'+pathToFileURL(ui+path.sep).href+'">').replace(/<script src="\.\/([^\"]+)"><\/script>/g,(full,name)=>['layout-schema.js','layout.js','task-progress.js','asset-settings.js'].includes(name)?full:'');
+  const html=fs.readFileSync(path.join(ui,'index.html'),'utf8').replace('<head>','<head><base href="'+pathToFileURL(ui+path.sep).href+'">').replace(/<script src="\.\/([^\"]+)"><\/script>/g,(full,name)=>['layout-schema.js','layout.js','task-progress.js','asset-settings.js','animation-layers.js','animation-layer-ui.js'].includes(name)?full:'');
   const fixture=path.join(temporary,'editor.html');fs.writeFileSync(fixture,html);await win.loadFile(fixture);
   for(const [w,h,dpr] of matrix){
     await metrics(w,h,dpr);
@@ -56,8 +56,9 @@ async function run(){
   await metrics(800,500,2);
   const modal=await js(`(()=>{const m=document.querySelector('#modal'),b=m.querySelector('.modal-body'),s=m.querySelector('select'),c=getComputedStyle(s);b.scrollTop=99999;return {bottom:m.getBoundingClientRect().bottom,scroll:b.scrollTop,inner:s.clientHeight-parseFloat(c.paddingTop)-parseFloat(c.paddingBottom),line:parseFloat(c.lineHeight)||parseFloat(c.fontSize)*1.5};})()`);
   assert.ok(modal.bottom<=500&&modal.scroll>0&&modal.inner>=modal.line-1,JSON.stringify(modal));
+  const animationClip=await require('./animation-clip-ui.cjs')(js);
   assert.deepEqual(errors,[]);
-  return {passed:true,matrix:results,progressStates:'passed',modal:'passed',visibleUI:'not tested; emulated device scale only'};
+  return {passed:true,matrix:results,progressStates:'passed',modal:'passed',animationClip,visibleUI:'not tested; emulated device scale only'};
 }
 app.whenReady().then(run).then(result=>{console.log(JSON.stringify(result));fs.writeFileSync(path.resolve(__dirname,'../../../..','.local/ui-layout-result.json'),JSON.stringify(result,null,2));app.exit(0);}).catch(e=>{console.error(e.stack);app.exit(1);});
 app.on('will-quit',()=>{if(win&&!win.isDestroyed())win.destroy();});

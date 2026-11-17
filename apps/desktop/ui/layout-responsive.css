@@ -33,6 +33,7 @@ body.editor-shell{display:flex;flex-direction:column;height:100dvh;min-width:0;o
 .modal>.modal-head>div{min-width:0;overflow-wrap:anywhere}
 .modal>.modal-head button{flex:none}
 .modal>.modal-body{min-height:0;overflow:auto;overscroll-behavior:contain}
+.modal>.modal-actions{flex:none;display:flex;justify-content:flex-end;gap:8px;padding:12px 22px;border-top:1px solid #454d54}
 .modal-body>.solid-button:last-child,.modal-body>.add-component:last-child{position:sticky;bottom:0;z-index:1;box-shadow:0 4px 12px #202226}
 .alias-form{flex-wrap:wrap}
 .modal.settings-modal{height:min(720px,calc(100dvh - 40px))}

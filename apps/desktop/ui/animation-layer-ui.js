@@ -97,12 +97,49 @@
     const before=structuredClone(s);if(current){const index=actor.residentLayers.indexOf(current);if(index<0)throw Error('常驻设置已改变');actor.residentLayers[index]=item;}else actor.residentLayers.push(item);e.remember(before);e.closeModal();e.render();
    }catch(err){const out=$('#resident-error');if(out)out.textContent=err.message;}finally{if(button.isConnected)button.disabled=false;}};
   }
+  const motionKind=def=>def.isAdditive?'原生增量动画':def.isPose?'静态姿势':def.isLoop?'循环动画':'单次动画';
+  function motionFields(track,clip){
+   if(track.type!=='animation')return '';
+   const def=e.motion(clip.assetId),asset=e.assets().find(a=>a.id===clip.assetId)||def;
+   return `<div class="clip-motion-source"><div class="section-title">动画素材</div><strong class="clip-motion-name">${esc(e.name(clip.assetId))}</strong><div class="clip-motion-original"><span>原始名称</span><code>${esc(asset?.source||clip.assetId||'未指定素材')}</code></div>${def?`<p class="hint">${motionKind(def)} · 源时长 ${Number(def.length.toFixed(3))} 秒${clip.sourceOffset?' · 从 '+Number(clip.sourceOffset.toFixed(3))+' 秒开始':''}</p>`:'<p class="error">动画素材缺失或不可用，请准备资源或更换动画。</p>'}<button id="clip-motion-replace" class="add-component" ${track.locked?'disabled':''}>更换动画…</button></div>`;
+  }
+  function openMotionPicker(track,clip){
+   if(track.locked){e.notify('轨道已锁定，无法更换动画');return;}
+   const initial=e.state(),original=clip.assetId;
+   let chosen=original,page=1;
+   e.showModal(`<div class="modal-head"><div><h2>更换动画</h2><p>${esc(clip.name)}</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">保留片段名称、起止时间、剧情绑定和播放设置；新动画从头播放。${track.layerRole==='overlay'?'混合方式按新素材调整，保留作用范围和权重。':'原生增量动画需放在叠加轨道。'}</p><div class="field"><label for="motion-picker-search">搜索动画</label><input id="motion-picker-search" class="input" placeholder="按动画名称或原始名称搜索，空格分隔关键词"><label for="motion-picker-kind">素材类型</label><select id="motion-picker-kind">${options({all:'全部',pose:'仅姿势',animation:'仅动画',overlay:'仅可叠加'},'all')}</select></div><div id="motion-picker-list" class="expression-picker-list" aria-label="可选动画"></div><div class="motion-picker-pages"><button id="motion-picker-prev">上一页</button><span id="motion-picker-count" class="hint" aria-live="polite"></span><button id="motion-picker-next">下一页</button></div><p id="motion-picker-choice" class="hint" aria-live="polite"></p><p id="motion-picker-error" class="error" role="alert"></p></div><div class="modal-actions"><button id="motion-picker-cancel" class="top-button">取消</button><button id="motion-picker-apply" class="solid-button" disabled>应用到片段</button></div>`);
+   const list=$('#motion-picker-list'),search=$('#motion-picker-search'),kind=$('#motion-picker-kind');
+   function draw(){
+    const terms=search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+    const matches=e.assets().filter(a=>{const d=e.motion(a.id);return d&&(track.layerRole==='overlay'||!d.isAdditive)&&L.matchesFilter(d,kind.value)&&terms.every(t=>(e.name(a.id)+' '+a.source).toLocaleLowerCase().includes(t));});
+    matches.sort((a,b)=>Number(b.id===original)-Number(a.id===original));
+    const pages=Math.max(1,Math.ceil(matches.length/60));page=Math.min(page,pages);
+    list.innerHTML=matches.slice((page-1)*60,page*60).map(a=>{const d=e.motion(a.id);return `<button class="costume-picker-row" data-motion-pick="${esc(a.id)}" aria-pressed="${a.id===chosen}"><span>${esc(e.name(a.id))}${a.id===original?'（当前）':''}<small>${esc(a.source)}</small></span><small>${motionKind(d)}<br>${Number(d.length.toFixed(3))} 秒</small></button>`;}).join('')||'<p class="hint">没有匹配的可用动画，请调整搜索条件或检查资源缓存。</p>';
+    $('#motion-picker-count').textContent=`${matches.length} 项 · ${page} / ${pages} 页`;
+    $('#motion-picker-prev').disabled=page<=1;$('#motion-picker-next').disabled=page>=pages;
+    $('#motion-picker-choice').textContent='已选择：'+e.name(chosen);
+    $('#motion-picker-apply').disabled=chosen===original||!e.motion(chosen);
+   }
+   search.oninput=kind.onchange=()=>{page=1;draw();};
+   $('#motion-picker-prev').onclick=()=>{page--;draw();list.scrollTop=0;};
+   $('#motion-picker-next').onclick=()=>{page++;draw();list.scrollTop=0;};
+   list.onclick=event=>{const button=event.target.closest('[data-motion-pick]');if(button){chosen=button.dataset.motionPick;draw();}};
+   $('#motion-picker-cancel').onclick=e.closeModal;
+   $('#motion-picker-apply').onclick=()=>{try{
+    const s=e.state();if(s!==initial||!s.tracks.includes(track)||!track.clips.includes(clip)||clip.assetId!==original)throw Error('工程或片段已改变，请重新选择动画');
+    const before=structuredClone(s);
+    if(!L.replaceMotion(track,clip,chosen,e.motion))return;
+    e.remember(before);e.closeModal();e.render();e.notify('已更换动画，可撤销');
+   }catch(error){$('#motion-picker-error').textContent=error.message;}};
+   draw();search.focus();
+  }
+  function bindMotion(track,clip){const button=$('#clip-motion-replace');if(button)button.onclick=()=>openMotionPicker(track,clip);}
   function clipFields(track,clip){
    if(track.type==='animation')return (track.layerRole==='overlay'?`<div class="layer-clip-fields"><div class="field"><label>叠加权重（%）</label><input id="layer-weight" class="input" type="number" min="0" max="100" value="${clip.weight??100}"></div>${bodyFields(clip,'layer')}</div>`:`<label class="dialogue-link"><input id="layer-loop" type="checkbox" ${clip.loop?'checked':''}> 在片段范围内循环</label><p class="hint">姿势保持至片段结束；片段空白处使用常驻动画。</p>`);
    if(track.type==='expression'&&e.face(clip.assetId))return `<div class="field"><label>表情播放方式</label><select id="layer-playback">${options({hold:'播放后保持末帧',loop:'在片段范围内循环'},clip.playback||'hold')}</select></div><p class="hint">整套面部曲线保存在一个片段中；说话口型只临时接管嘴部。</p>`;
    return '';
   }
   function bindClip(track,clip){for(const [key,field] of [['weight','weight'],['blend','blendMode'],['scope','scope'],['loop','loop'],['playback','playback']]){const input=$('#layer-'+key);if(!input)continue;input.disabled=!!track.locked;input.onchange=()=>{try{const value=key==='loop'?input.checked:key==='weight'?Number(input.value):input.value;if(key==='weight'&&(!Number.isFinite(value)||value<0||value>100))throw Error('权重须在 0–100 之间');if(key==='blend'&&value==='additive'&&!e.motion(clip.assetId)?.isAdditive)throw Error('此动作没有原生增量数据');change(()=>clip[field]=value);}catch(err){e.notify(err.message);e.render();}};}}
-  return {residentMarkup,bindResident,clipFields,bindClip,addTrack,trackFor,addClip,openExpressionPicker};
+  return {residentMarkup,bindResident,motionFields,bindMotion,clipFields,bindClip,addTrack,trackFor,addClip,openExpressionPicker};
  };
 })(globalThis);

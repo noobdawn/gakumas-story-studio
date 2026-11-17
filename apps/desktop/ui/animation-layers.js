@@ -33,6 +33,18 @@
   state.layerSchema=1;return state;
  }
  function motionTime(def,time,loop){if(def.isPose)return 0;return loop&&def.length>0?((time%def.length)+def.length)%def.length:Math.max(0,Math.min(time,Math.max(0,def.length-.0001)));}
+ function replaceMotion(track,clip,assetId,motion){
+  if(track.type!=='animation'||!track.clips.includes(clip))throw Error('动画片段已改变，请重新选择');
+  if(track.locked)throw Error('轨道已锁定，无法更换动画');
+  const def=motion(assetId);
+  if(!def)throw Error('动画素材不可用，请检查资源缓存');
+  if(def.isAdditive&&track.layerRole!=='overlay')throw Error('原生增量动画只能用于叠加轨道');
+  if(clip.assetId===assetId)return false;
+  // Source trimming belongs to the previous asset. Preserve all timeline/story edits.
+  clip.assetId=assetId;clip.sourceOffset=0;
+  if(track.layerRole==='overlay')clip.blendMode=def.isAdditive?'additive':'override';
+  return true;
+ }
  function fade(clip,time){const i=clip.fadeIn||0,o=clip.fadeOut||0,smooth=x=>{x=clamp(x);return x*x*(3-2*x);};return Math.min(i?smooth(time/i):1,o?smooth((clip.len-time)/o):1);}
  function bodyLayers(state,actor,env){
   const result=[],time=state.current;
@@ -77,5 +89,5 @@
  }
  function matchesFilter(def,filter){if(filter==='all')return true;if(!def)return false;if(filter==='pose')return def.isPose===true;if(filter==='animation')return def.isPose===false;if(filter==='overlay')return def.overlayReady===true;return false;}
  function summary(actor,assetName){return (actor.residentLayers||[]).filter(x=>x.enabled&&x.kind!=='gaze').map(x=>assetName(x.assetId)||'素材缺失').join('、');}
- return {scopes,kinds,validateResident,normalize,motionTime,bodyLayers,faceLayers,sample,fade,active,matchesFilter,summary};
+ return {scopes,kinds,validateResident,normalize,motionTime,replaceMotion,bodyLayers,faceLayers,sample,fade,active,matchesFilter,summary};
 });
