@@ -1,5 +1,12 @@
 # D3D11 / NVENC export prototype
 
+Production integration (2026-11-17): normal native-composition exports now default
+to GPU with an eight-frame state queue; users can select compatibility PNG/x264.
+Production mode covers the complete project without diagnostic flags or
+per-frame reports. Pacing is uncapped only during GPU export and restored on
+completion, cancellation or failure. Packages require `creator-production-gpu-v1`
+and the native DLL. The sections below retain diagnostic controls and history.
+
 Opt-in diagnostics only: `video.benchmark` with `gpuVideo: true`, native final
 composition and a new destination. The merged GPU diagnostic permits at most
 1,800 frames; other diagnostic paths remain capped at 300. An explicit

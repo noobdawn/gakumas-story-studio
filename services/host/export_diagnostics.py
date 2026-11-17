@@ -61,6 +61,18 @@ def validate_gpu_video(config, native_post, native_ui, frames):
     value = config.get('gpuVideo', False)
     if not isinstance(value, bool):
         raise ValueError('Invalid GPU video flag')
+    mode = config.get('exportMode')
+    if mode not in (None, 'gpu', 'compatibility'):
+        raise ValueError('视频导出模式无效')
+    if mode == 'gpu':
+        if (not value or not native_post or native_ui or config.get('diagnosticRange') is not None
+            or config.get('fullProject', False) is not False or config.get('mergedFrame') is not True
+            or type(config.get('queueCapacity')) is not int or config['queueCapacity'] != 8
+            or not 1 <= frames <= 216000):
+            raise ValueError('GPU 加速导出需要完整原生合成与 8 帧有界队列')
+        return True
+    if mode == 'compatibility' and value:
+        raise ValueError('兼容模式不能同时启用 GPU 编码')
     if value and (not native_post or native_ui or config.get('diagnosticRange') is None
                   or config.get('newOnly') is not True or not 1 <= frames <= diagnostic_limit(config)):
         raise ValueError(f'GPU 视频仅支持原生合成的 1～{diagnostic_limit(config)} 帧诊断与新输出文件')

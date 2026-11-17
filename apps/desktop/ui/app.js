@@ -1457,18 +1457,19 @@
   function openVideoExport(){
     if(!videoExport){notify('当前 Player 不支持视频导出，请重启到新版');return;}
     commitInspectorInput();setPlaying(false);
-    showModal(`<div class="modal-head"><div><h2>导出视频</h2><p>按时间轴逐帧渲染 MP4</p></div><button class="icon-button" data-close aria-label="关闭">×</button></div><div class="modal-body"><div class="field"><label for="video-quality">画面分辨率</label><select id="video-quality"><option value="720" ${(state.globalSettings.exportQuality||'720')==='720'?'selected':''}>720p</option><option value="1080" ${state.globalSettings.exportQuality==='1080'?'selected':''}>1080p</option></select></div><p class="hint">时长、帧率与画面比例使用工程设置。渲染速度取决于场景和电脑性能；对话文字为实验字幕样式。</p><button id="video-start" class="solid-button">选择位置并导出</button></div>`);
+    showModal(`<div class="modal-head"><div><h2>导出视频</h2><p>按时间轴逐帧渲染 MP4</p></div><button class="icon-button" data-close aria-label="关闭">×</button></div><div class="modal-body"><div class="field"><label for="video-quality">画面分辨率</label><select id="video-quality"><option value="720" ${(state.globalSettings.exportQuality||'720')==='720'?'selected':''}>720p</option><option value="1080" ${state.globalSettings.exportQuality==='1080'?'selected':''}>1080p</option></select></div><div class="field"><label for="video-mode">导出方式</label><select id="video-mode"><option value="gpu" ${state.compositionVersion===1?'selected':'disabled'}>GPU 加速（NVIDIA）</option><option value="compatibility" ${state.compositionVersion===1?'':'selected'}>兼容模式</option></select></div><p class="hint">GPU 加速需要支持 NVENC 的 NVIDIA 显卡；不支持时请选择兼容模式。</p><p class="hint">时长、帧率与画面比例使用工程设置。渲染速度取决于场景和电脑性能；对话文字为实验字幕样式。</p><button id="video-start" class="solid-button">选择位置并导出</button></div>`);
     $('#video-quality').onchange=e=>{const before=copyState();state.globalSettings.exportQuality=e.target.value;remember(before);};
-    $('#video-start').onclick=()=>projectAction(async()=>{const quality=$('#video-quality').value;const output=await window.projectAPI.chooseVideo();if(!output)return;await exportMovie(output,quality);});
+    $('#video-start').onclick=()=>projectAction(async()=>{const quality=$('#video-quality').value;const output=await window.projectAPI.chooseVideo();if(!output)return;await exportMovie(output,quality,false,null,$('#video-mode').value);});
   }
-  async function exportMovie(output,quality,newOnly=false,diagnostic=null){
+  async function exportMovie(output,quality,newOnly=false,diagnostic=null,mode="gpu"){
     await uiReady;
     await Promise.all(prepareLayerFaces());
     const {audio,captions,uiTransitions}=exportInputs(),[width,height]=videoDimensions(quality),oldTime=state.current;let started=false,cancelled=false,encoding=false;
     const report=diagnostic?{version:2,runId:diagnostic.runId,label:diagnostic.label||'',startedAt:new Date().toISOString(),projectId:state.projectId,output,width,height,quality,fps,sourceDuration:duration,diagnostic,frames:[],gpuTiming:diagnostic.gpuVideo?'GPU execution not measured; Unity spans are inclusive CPU wall time; frame replies acknowledge submission; finish drains encoding and muxes':'not measured; Unity spans are inclusive CPU wall time; frameRtt includes stdin/backpressure'}:null;
     const clock=()=>globalThis.performance.now(),begin=clock(),originalState=state;let queueSession='',cleanupError=null;
+    const normal=diagnostic?{}:CreatorExportQueue.normalOptions(state.compositionVersion,mode);let result=null;
     const fullSummary=diagnostic?.fullProject?CreatorExportQueue.createSummary():null;if(fullSummary)report.frameSummary=fullSummary.value;
-    if(diagnostic?.queueCapacity)state=structuredClone(state);
+    if(diagnostic?.queueCapacity||normal.gpuVideo)state=structuredClone(state);
     exporting=true;showModal(`<div class="modal-head"><div><h2>正在导出视频</h2><p id="export-progress">正在准备…</p></div></div><div class="modal-body"><progress id="export-bar" max="1" value="0" style="width:100%"></progress><p class="hint">导出期间请保持工作台运行。</p><button id="export-cancel" class="top-button">取消导出</button></div>`);
     $('#export-cancel').onclick=()=>{cancelled=true;$('#export-progress').textContent='正在取消…';if(encoding)hostPost('export-cancel',{queueSession}).catch(()=>{});};
     try {
@@ -1484,16 +1485,17 @@
         report.preRollMs=clock()-warmStart;
       }
       const prepareStart=clock();
-      const info=await hostPost('export-start',{output,width,height,duration,fps,audio,captions,uiTransitions,newOnly,nativePostEffects:state.compositionVersion===1||CreatorPostEffects.packet(state,0).enabled,...(diagnostic?{diagnosticRange:{startFrame:diagnostic.startFrame,endFrame:diagnostic.endFrame},profileExport:diagnostic.profile,runId:diagnostic.runId,gpuVideo:diagnostic.gpuVideo===true,mergedFrame:diagnostic.mergedFrame===true,queueCapacity:diagnostic.queueCapacity||0,fullProject:diagnostic.fullProject===true}:{})});started=true;queueSession=info.queueSession||'';
+      const info=await hostPost('export-start',{output,width,height,duration,fps,audio,captions,uiTransitions,newOnly,...normal,nativePostEffects:state.compositionVersion===1||CreatorPostEffects.packet(state,0).enabled,...(diagnostic?{diagnosticRange:{startFrame:diagnostic.startFrame,endFrame:diagnostic.endFrame},profileExport:diagnostic.profile,runId:diagnostic.runId,gpuVideo:diagnostic.gpuVideo===true,mergedFrame:diagnostic.mergedFrame===true,queueCapacity:diagnostic.queueCapacity||0,fullProject:diagnostic.fullProject===true}:{})});started=true;queueSession=info.queueSession||'';result={output,gpuVideo:info.gpuVideo,frames:info.frames};
       if(report)report.prepareMs=clock()-prepareStart;
       const framesStart=clock();
       if(info.queueCapacity){
-        report.queue=await CreatorExportQueue.run({total:info.frames,capacity:info.queueCapacity,session:queueSession,fullProject:diagnostic.fullProject===true,
+        const queue=await CreatorExportQueue.run({total:info.frames,capacity:info.queueCapacity,session:queueSession,fullProject:!diagnostic||diagnostic.fullProject===true,
           cancelled:()=>cancelled,request:hostPost,clock,
           makeFrame:i=>{const begin=clock(),sourceFrame=info.startFrame+i;state.current=sourceFrame/fps;const snapshot=playerSnapshot();if(!snapshot)throw Error('场景或相机不可用');return {id:++bridgeId,index:i,state:snapshot,snapshotMs:clock()-begin};},
-          onFrame:(i,reply,row,latencyMs)=>{const record={index:i,sourceFrame:info.startFrame+i,time:(info.startFrame+i)/fps,snapshotMs:row.snapshotMs,stateRttMs:null,frameRttMs:null,totalMs:null,queueLatencyMs:latencyMs,state:null,frame:reply};if(fullSummary)fullSummary.add(record);else report.frames.push(record);if(diagnostic.cancelAfterFrames&&i+1>=diagnostic.cancelAfterFrames)cancelled=true;},
+          onFrame:(i,reply,row,latencyMs)=>{if(!report)return;const record={index:i,sourceFrame:info.startFrame+i,time:(info.startFrame+i)/fps,snapshotMs:row.snapshotMs,stateRttMs:null,frameRttMs:null,totalMs:null,queueLatencyMs:latencyMs,state:null,frame:reply};if(fullSummary)fullSummary.add(record);else report.frames.push(record);if(diagnostic.cancelAfterFrames&&i+1>=diagnostic.cancelAfterFrames)cancelled=true;},
           onProgress:(done,total)=>{$('#export-bar').value=done/total;$('#export-progress').textContent=`已提交 ${done} / ${total} 帧`;}
         });
+        if(report)report.queue=queue;result.queue=queue;
       }else for(let i=0;i<info.frames;i++){
         if(cancelled)break;
         const frameStart=clock(),sourceFrame=(info.startFrame||0)+i;
@@ -1504,12 +1506,12 @@
         if(report)report.frames.push({index:i,sourceFrame,time:state.current,snapshotMs:evaluatedAt-frameStart,stateRttMs:stateAt-evaluatedAt,frameRttMs:clock()-stateAt,totalMs:clock()-frameStart,state:stateReply,frame:frameReply});
         if(i%4===0||i+1===info.frames){$('#export-bar').value=(i+1)/info.frames;$('#export-progress').textContent=`已渲染 ${i+1} / ${info.frames} 帧`;}
       }
-      if(report)report.framesMs=clock()-framesStart;
+      result.framesMs=clock()-framesStart;if(report)report.framesMs=result.framesMs;
       if(cancelled){if(report){report.cancelled=true;report.totalMs=clock()-begin;return report;}return;}
       const finishStart=clock();encoding=true;$('#export-cancel').disabled=true;$('#export-progress').textContent='正在完成视频编码…';const finishReply=await hostPost('export-finish',{queueSession});started=false;
       if(report){report.finishMs=clock()-finishStart;report.totalMs=clock()-begin;if(diagnostic.gpuVideo)report.gpuResult=finishReply;}
       if(!cancelled)notify('视频导出完成：'+output);
-      return report;
+      result.totalMs=clock()-begin;result.finish=finishReply;return report||result;
     } catch(error){if(!cancelled)throw error;}
     finally {
       if(started){const cancelStart=clock();try{const reply=await hostPost('export-cancel',{queueSession});if(report)report.cancelResult=reply;}catch(error){cleanupError=error.message;if(report)report.cancelError=cleanupError;}if(report)report.cancelMs=clock()-cancelStart;}
@@ -1620,7 +1622,7 @@
       if(fingerprint()!==savedFingerprint&&args.discard!==true)throw Error('当前工程有未保存的更改');if(args.layout!==undefined&&!['project','current'].includes(args.layout))throw Error('布局选择无效');const result=await window.controlAPI.load(str(args.path)),layout=result.document.uiLayout,conflict=layoutConflict(layout);if(layout&&args.layout==='project')window.CreatorPanelLayout.apply(layout);applyProject(result.document.state,result.name,layout);return {name:result.name,layoutConflict:conflict,layoutApplied:Boolean(layout&&args.layout==='project')};
     }
     if(command==='video.export'){
-      if(!videoExport||!['720','1080'].includes(args.quality))throw Error('导出设置不可用');setPlaying(false);const output=await window.controlAPI.checkOutput(str(args.path));await exportMovie(output,args.quality,true);return {output};
+      if(!videoExport||!['720','1080'].includes(args.quality))throw Error('导出设置不可用');setPlaying(false);const output=await window.controlAPI.checkOutput(str(args.path));return await exportMovie(output,args.quality,true,null,args.mode??'gpu');
     }
     if(command==='video.benchmark'){
       if(!videoExport||state.compositionVersion!==1||!['720','1080'].includes(args.quality))throw Error('诊断区间需要图层合成工程与有效导出分辨率');

@@ -64,6 +64,25 @@ class GpuExportTest(unittest.TestCase):
             with self.subTest(value=value, gpu=gpu), self.assertRaises(ValueError):
                 validate_merged_frame({'mergedFrame': value}, gpu)
 
+    def test_normal_gpu_requires_full_native_queue_but_supports_existing_destination(self):
+        config=dict(exportMode='gpu',gpuVideo=True,mergedFrame=True,queueCapacity=8,newOnly=False)
+        self.assertTrue(validate_gpu_video(config,True,False,37951))
+        for change in (dict(queueCapacity=4),dict(queueCapacity=True),dict(mergedFrame=False),dict(gpuVideo=False),dict(fullProject=True),dict(diagnosticRange=dict(startFrame=0,endFrame=30)),dict(exportMode='bad'),dict(exportMode='compatibility')):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                validate_gpu_video(dict(config,**change),True,False,37951)
+        for native,ui,frames in ((False,False,30),(True,True,30),(True,False,216001)):
+            with self.assertRaises(ValueError):validate_gpu_video(config,native,ui,frames)
+
+    def test_normal_gpu_cancel_preserves_existing_output(self):
+        config=dict(self.config,exportMode='gpu',diagnosticRange=None,mergedFrame=True,queueCapacity=8,newOnly=False)
+        output=Path(config['output']);output.write_bytes(b'user-existing-video')
+        job=self.job(config)
+        self.assertEqual(job.frames,60);self.assertEqual(job.start_frame,0)
+        self.assertTrue(job.gpu_video);self.assertEqual(job.queue_capacity,8)
+        job.cancel()
+        self.assertEqual(output.read_bytes(),b'user-existing-video')
+        self.assertFalse(job.temp.exists())
+
     def test_merged_packet_preserves_state_but_host_owns_frame_identity(self):
         state = dict(kind='gpu-export-cancel', token='untrusted', exportIndex=99,
                      gpuVideo=False, frameWidth=16, sceneId='trainingroom')

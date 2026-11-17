@@ -53,7 +53,7 @@ try {
  $env:CREATOR_LIBRARY_DIR=Join-Path $stage 'test-data'
  & $checkPython (Join-Path $PSScriptRoot 'check.py');if($LASTEXITCODE){throw 'Source checks failed'}
  Push-Location $repoRoot
- try {node --test apps/desktop/electron/tests/*.test.js;if($LASTEXITCODE){throw 'Node checks failed'}} finally {Pop-Location}
+ try {node --test --test-concurrency=1 apps/desktop/electron/tests/*.test.js;if($LASTEXITCODE){throw 'Node checks failed'}} finally {Pop-Location}
  Push-Location (Join-Path $repoRoot 'services/host')
  try {& $checkPython -m unittest discover -v;if($LASTEXITCODE){throw 'Python checks failed'}} finally {Pop-Location}
  $reportPath=Join-Path $stage 'report'
@@ -65,7 +65,7 @@ try {
  $uiCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$harness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'ui-check.log') -RedirectStandardError (Join-Path $reportPath 'ui-check-error.log')
  if($uiCheck.ExitCode){throw 'Headless UI layout checks failed'}
  if($ReusePlayer){$player=Join-Path $build 'runtime/player';Set-Content -LiteralPath (Join-Path $reportPath 'player.txt') -Value 'Reused existing Player; desktop/host-only update.'}
- else { $player=Join-Path $stage 'player'; & (Join-Path $PSScriptRoot 'build-player.ps1') -Unity $Unity -Output $player -Report $reportPath }
+ else { $player=Join-Path $stage 'player'; & (Join-Path $PSScriptRoot 'build-player.ps1') -Unity $Unity -Output $player -Report $reportPath -GpuExportPrototype }
  & $checkPython (Join-Path $PSScriptRoot 'package.py') --python $PythonRuntime --tools $Tools --player $player --output $candidate --no-archive
  if($LASTEXITCODE){throw 'Package failed'}
  & $checkPython (Join-Path $PSScriptRoot 'verify-package.py') $candidate;if($LASTEXITCODE){throw 'Portable check failed'}

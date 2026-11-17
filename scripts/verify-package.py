@@ -12,6 +12,8 @@ def main():
     parser.add_argument('package',type=Path)
     args=parser.parse_args()
     root=args.package.resolve()
+    assert (root/'runtime/player/creator-production-gpu-v1').is_file(), 'Production GPU capability missing'
+    assert (root/'runtime/player/CreatorPlayer_Data/Plugins/x86_64/GSSGpuExport.dll').is_file(), 'GPU plugin missing'
     manifest=json.loads((root/'manifest-sha256.json').read_text('utf-8'))
     actual={p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
     assert actual==set(manifest)|{'manifest-sha256.json'}, 'Unexpected package contents'

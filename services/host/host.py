@@ -555,6 +555,7 @@ def main():
                         elif endpoint == 'export-start':
                             with lock:
                                 if not export_capable or export_job is not None: raise ValueError('导出不可用或已在进行')
+                                if message.get('exportMode')=='gpu' and not (player.parent/'creator-production-gpu-v1').is_file():raise ValueError('当前 Player 不支持 GPU 加速导出，请更新程序或选择兼容模式')
                                 if message.get('profileExport') is True and not (player.parent/'creator-export-profile-v1').is_file():raise ValueError('Player 不支持导出计时')
                                 if message.get('gpuVideo') is True and not (player.parent/'creator-gpu-export-v1').is_file():raise ValueError('Player 不支持 GPU 视频诊断')
                                 if message.get('mergedFrame') is True and not (player.parent/'creator-merged-export-v1').is_file():raise ValueError('Player 不支持合并帧诊断')

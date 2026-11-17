@@ -53,5 +53,10 @@
       }
     }};
   }
-  return {run,createSummary};
+  function normalOptions(compositionVersion,mode='gpu'){
+    if(!['gpu','compatibility'].includes(mode))throw Error('视频导出模式无效');
+    if(mode==='gpu'&&compositionVersion===1)return {exportMode:'gpu',gpuVideo:true,mergedFrame:true,queueCapacity:8};
+    return {exportMode:'compatibility'};
+  }
+  return {run,createSummary,normalOptions};
 });

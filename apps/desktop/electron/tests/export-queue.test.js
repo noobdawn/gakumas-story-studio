@@ -1,6 +1,12 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),Q=require('../../ui/export-queue');
 const session='1'.repeat(32);
+test('normal composition export defaults to bounded GPU; compatibility and legacy remain available',()=>{
+  assert.deepEqual(Q.normalOptions(1),{exportMode:'gpu',gpuVideo:true,mergedFrame:true,queueCapacity:8});
+  assert.deepEqual(Q.normalOptions(1,'compatibility'),{exportMode:'compatibility'});
+  assert.deepEqual(Q.normalOptions(undefined),{exportMode:'compatibility'});
+  assert.throws(()=>Q.normalOptions(1,'bad'),/模式/);
+});
 function simulation(capacity,total=17){
   let enqueued=0,reported=0,clock=0,calls=0;const pending=[],source={value:0},seen=[],delivered=[];
   return {seen,delivered,get calls(){return calls;},opts:{total,capacity,session,clock:()=>++clock,sleep:async()=>{},cancelled:()=>false,
