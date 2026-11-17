@@ -1,0 +1,6 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"><title>选择颜色</title><link rel="stylesheet" href="style.css"></head><body>
+<main><div id="sv" tabindex="0" role="slider" aria-label="饱和度与亮度"><div id="mark"></div></div>
+<label class="hue">色相<input id="hue" type="range" min="0" max="359" value="0"></label>
+<div class="color-row"><div id="swatch"></div><label>十六进制<input id="hex" type="text" maxlength="7" spellcheck="false" aria-label="十六进制颜色"></label></div>
+<button id="screen" type="button">从屏幕取色…</button><p class="hint">可取预览画面或程序外的颜色。取色时单击确认，Esc 取消。</p>
+<p id="error" role="status"></p><footer><button id="cancel">取消</button><button id="apply">应用颜色</button></footer></main><script src="math.js"></script><script src="panel.js"></script></body></html>

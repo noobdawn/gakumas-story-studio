@@ -64,6 +64,9 @@ try {
  New-Item -ItemType Directory -Path $env:GSS_UI_CHECK_TEMP | Out-Null
  $uiCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$harness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'ui-check.log') -RedirectStandardError (Join-Path $reportPath 'ui-check-error.log')
  if($uiCheck.ExitCode){throw 'Headless UI layout checks failed'}
+ $pickerHarness=Join-Path $repoRoot 'apps/desktop/electron/tests/color-picker-check.cjs'
+ $pickerCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$pickerHarness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'color-picker-check.log') -RedirectStandardError (Join-Path $reportPath 'color-picker-check-error.log')
+ if($pickerCheck.ExitCode){throw 'Headless color picker checks failed'}
  if($ReusePlayer){$player=Join-Path $build 'runtime/player';Set-Content -LiteralPath (Join-Path $reportPath 'player.txt') -Value 'Reused existing Player; desktop/host-only update.'}
  else { $player=Join-Path $stage 'player'; & (Join-Path $PSScriptRoot 'build-player.ps1') -Unity $Unity -Output $player -Report $reportPath -GpuExportPrototype }
  & $checkPython (Join-Path $PSScriptRoot 'package.py') --python $PythonRuntime --tools $Tools --player $player --output $candidate --no-archive

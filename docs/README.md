@@ -4,6 +4,7 @@ GSS 当前是 Windows 开发预览版。源码、程序下载包与用户数据�
 
 ## 使用
 
+- [文件编辑与屏幕取色](user/editable-settings.md)：提示词、替换词文件链接及独立颜色窗口。
 - [首次使用](user/getting-started.md)：选择目录、安装语音、准备游戏资源、查看进度及恢复默认翻译配置。
 - [更新记录](../CHANGELOG.md)：本轮功能变化和已知限制。
 - [公共默认配置](../resources/editor-defaults/README.md)：翻译提示词与发音词表的来源、修订和覆盖规则。

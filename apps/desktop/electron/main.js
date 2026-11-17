@@ -77,6 +77,11 @@ ipcMain.handle('voices:rename', (event,id,alias) => { checkSender(event); return
 ipcMain.handle('voices:preview', (event,id,styleId) => { checkSender(event); return voices.preview(id,styleId); });
 ipcMain.handle('voices:pronunciation-read', event => {checkSender(event);return pronunciation.read();});
 ipcMain.handle('voices:pronunciation-save', (event,rules,revision) => {checkSender(event);return pronunciation.save(rules,revision);});
+const settingsFiles=require('./settings-files').create({translation,pronunciation,shell,assertWritable:writeGuard.assertWritable});
+const colorPicker=require('./color-picker').create({BrowserWindow,ipcMain,screen,desktopCapturer:require('electron').desktopCapturer,parent:()=>win});
+ipcMain.handle('colors:pick',(event,color)=>{checkSender(event);return colorPicker.pick(color);});
+ipcMain.handle('settings:files',event=>{checkSender(event);return settingsFiles.files();});
+ipcMain.handle('settings:open-file',(event,kind,reveal)=>{checkSender(event);return settingsFiles.open(kind,reveal);});
 ipcMain.handle('translation:read', event => {checkSender(event);return translation.read();});
 ipcMain.handle('translation:save', (event,settings) => {checkSender(event);return translation.save(settings);});
 ipcMain.handle('translation:run', (event,lines) => {checkSender(event);return translation.translate(lines);});
@@ -281,7 +286,7 @@ async function start() {
   if (!closing && !win.isDestroyed()) await win.loadURL(url);
   if(!process.env.CREATOR_TEST_INSTANCE&&!closing&&!win.isDestroyed()){
     await gameDialogs.promptOnStartup();
-    try{await require('./translation-startup').offer({translation,dialog,window:()=>win,openSettings:()=>command('editor-settings'),active:()=>!closing&&!win.isDestroyed()});}catch(error){dialog.showErrorBox('翻译设置',error.message);}
+    try{await Promise.all([translation.ensureFile(),pronunciation.ensureFile()]);await require('./translation-startup').offer({translation,dialog,window:()=>win,openSettings:()=>command('editor-settings'),active:()=>!closing&&!win.isDestroyed()});}catch(error){dialog.showErrorBox('翻译设置',error.message);}
   }
   if(controlToken){const raw=process.env.CREATOR_CONTROL_PORT||'0';if(!/^\d{1,5}$/.test(raw)||Number(raw)>65535)throw Error('控制端口无效');controlServer=require('./control-server').create({token:controlToken,dispatch:dispatchControl});const address=await controlServer.listen(Number(raw));process.stdout.write('CREATOR_CONTROL_READY '+JSON.stringify({host:'127.0.0.1',port:address.port})+'\n');}
 

@@ -79,3 +79,7 @@ if (process.env.CREATOR_CONTROL_TOKEN) contextBridge.exposeInMainWorld('controlA
 }));
 
 contextBridge.exposeInMainWorld('setupAPI',Object.freeze({info:()=>ipcRenderer.invoke('setup:info'),data:()=>ipcRenderer.invoke('setup:data'),download:(ids,accepted)=>ipcRenderer.invoke('setup:download',ids,accepted),cancel:()=>ipcRenderer.invoke('setup:cancel'),finish:engine=>ipcRenderer.invoke('setup:finish',engine)}));
+
+contextBridge.exposeInMainWorld('settingsFileAPI',Object.freeze({files:()=>ipcRenderer.invoke('settings:files'),open:(kind,reveal=false)=>ipcRenderer.invoke('settings:open-file',kind,reveal)}));
+
+contextBridge.exposeInMainWorld('colorAPI',Object.freeze({pick:color=>ipcRenderer.invoke('colors:pick',color)}));

@@ -1,5 +1,7 @@
 # 模块与运行数据
 
+2026-11-17：颜色输入通过独立 Electron 窗口及多显示器捕获层取色，绕开主窗口裁切和 Unity 子窗口遮挡；提示词和词表支持外部文件编辑与版本检查。见 [独立取色与文件配置](color-picker-config.md)。
+
 2026-11-17 角色姓名条颜色：`character-colors.js` 为面板、预览、图层合成、导出提供同一解析入口。工程资产可覆盖左右端颜色，单句覆盖优先；Unity 修正外部 sRGB 姓名条与对白底板的显示 RGB 转换。来源、序列化与回归范围见 [角色姓名条颜色](character-colors.md)。
 
 2026-11-17 动画片段属性：`animation-layer-ui.js` 提供独立素材信息和搜索替换弹窗，`animation-layers.js.replaceMotion` 只变更 `assetId`、清零旧 `sourceOffset`，叠加层按新素材调整 `blendMode`。不另建片段／轨道或改名，不改剧情绑定、排时、循环及渐变。沿用 `remember`、`render` 和现有预览／导出求值、工程序列化；弹窗提交时复查工程／轨道／片段身份、锁定和当前资源定义。
