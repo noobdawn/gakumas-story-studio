@@ -2,6 +2,27 @@
 import json
 
 
+def validate_merged_frame(config, gpu_video):
+    value = config.get('mergedFrame', False)
+    if type(value) is not bool or value and not gpu_video:
+        raise ValueError('合并帧命令仅支持 GPU 视频诊断')
+    return value
+
+
+def merged_frame_request(state, frame, enabled):
+    if not enabled:
+        if state is not None:
+            raise ValueError('当前导出未启用合并帧命令')
+        return frame
+    if not isinstance(state, dict) or frame.get('gpuVideo') is not True:
+        raise ValueError('合并帧缺少有效演出状态')
+    # Frame identity, dimensions, flags and token always come from the job/host.
+    packet = dict(state)
+    packet.update(frame)
+    packet['kind'] = 'state-frame'
+    return packet
+
+
 def sample_range(config, total_frames, native_post):
     value = config.get('diagnosticRange')
     if value is None:

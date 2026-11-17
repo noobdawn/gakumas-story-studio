@@ -1482,7 +1482,7 @@
         report.preRollMs=clock()-warmStart;
       }
       const prepareStart=clock();
-      const info=await hostPost('export-start',{output,width,height,duration,fps,audio,captions,uiTransitions,newOnly,nativePostEffects:state.compositionVersion===1||CreatorPostEffects.packet(state,0).enabled,...(diagnostic?{diagnosticRange:{startFrame:diagnostic.startFrame,endFrame:diagnostic.endFrame},profileExport:diagnostic.profile,runId:diagnostic.runId,gpuVideo:diagnostic.gpuVideo===true}:{})});started=true;
+      const info=await hostPost('export-start',{output,width,height,duration,fps,audio,captions,uiTransitions,newOnly,nativePostEffects:state.compositionVersion===1||CreatorPostEffects.packet(state,0).enabled,...(diagnostic?{diagnosticRange:{startFrame:diagnostic.startFrame,endFrame:diagnostic.endFrame},profileExport:diagnostic.profile,runId:diagnostic.runId,gpuVideo:diagnostic.gpuVideo===true,mergedFrame:diagnostic.mergedFrame===true}:{})});started=true;
       if(report)report.prepareMs=clock()-prepareStart;
       const framesStart=clock();
       for(let i=0;i<info.frames;i++){
@@ -1490,8 +1490,8 @@
         const frameStart=clock(),sourceFrame=(info.startFrame||0)+i;
         state.current=sourceFrame/fps;const snapshot=playerSnapshot();if(!snapshot)throw Error('场景或相机不可用');
         const evaluatedAt=clock();
-        const stateReply=await hostPost('state',{...snapshot,id:++bridgeId,...(diagnostic?{profileExport:diagnostic.profile,frameIndex:sourceFrame,runId:diagnostic.runId}:{})}),stateAt=clock();
-        const frameReply=await hostPost('export-frame',{id:++bridgeId,index:i,...(diagnostic?{frameDigest:!diagnostic.gpuVideo,runId:diagnostic.runId,skipPreRender:diagnostic.skipPreRender===true,gpuColor:diagnostic.gpuColor===true,referenceFrame:!diagnostic.gpuVideo&&diagnostic.references&&[0,Math.floor(info.frames/2),info.frames-1].includes(i)}:{})});
+        const stateReply=info.mergedFrame?null:await hostPost('state',{...snapshot,id:++bridgeId,...(diagnostic?{profileExport:diagnostic.profile,frameIndex:sourceFrame,runId:diagnostic.runId}:{})}),stateAt=clock();
+        const frameReply=await hostPost('export-frame',{id:++bridgeId,index:i,...(info.mergedFrame?{state:snapshot}:{}),...(diagnostic?{frameDigest:!diagnostic.gpuVideo,runId:diagnostic.runId,skipPreRender:diagnostic.skipPreRender===true,gpuColor:diagnostic.gpuColor===true,referenceFrame:!diagnostic.gpuVideo&&diagnostic.references&&[0,Math.floor(info.frames/2),info.frames-1].includes(i)}:{})});
         if(report)report.frames.push({index:i,sourceFrame,time:state.current,snapshotMs:evaluatedAt-frameStart,stateRttMs:stateAt-evaluatedAt,frameRttMs:clock()-stateAt,totalMs:clock()-frameStart,state:stateReply,frame:frameReply});
         if(i%4===0||i+1===info.frames){$('#export-bar').value=(i+1)/info.frames;$('#export-progress').textContent=`已渲染 ${i+1} / ${info.frames} 帧`;}
       }
@@ -1617,11 +1617,11 @@
       if(!videoExport||state.compositionVersion!==1||!['720','1080'].includes(args.quality))throw Error('诊断区间需要图层合成工程与有效导出分辨率');
       const {startFrame,endFrame}=args,preRollFrames=args.preRollFrames??30;
       if(!Number.isSafeInteger(startFrame)||!Number.isSafeInteger(endFrame)||startFrame<0||endFrame<=startFrame||endFrame>Math.ceil(duration*fps)||endFrame-startFrame>300||!Number.isSafeInteger(preRollFrames)||preRollFrames<0||preRollFrames>300)throw Error('诊断区间必须是工程内的 1～300 帧，预采样为 0～300 帧');
-      if(args.profile!==undefined&&typeof args.profile!=='boolean'||args.references!==undefined&&typeof args.references!=='boolean'||args.skipPreRender!==undefined&&typeof args.skipPreRender!=='boolean'||args.gpuColor!==undefined&&typeof args.gpuColor!=='boolean'||args.gpuVideo!==undefined&&typeof args.gpuVideo!=='boolean')throw Error('诊断参数无效');
+      if(args.profile!==undefined&&typeof args.profile!=='boolean'||args.references!==undefined&&typeof args.references!=='boolean'||args.skipPreRender!==undefined&&typeof args.skipPreRender!=='boolean'||args.gpuColor!==undefined&&typeof args.gpuColor!=='boolean'||args.gpuVideo!==undefined&&typeof args.gpuVideo!=='boolean'||args.mergedFrame!==undefined&&typeof args.mergedFrame!=='boolean'||args.mergedFrame===true&&args.gpuVideo!==true)throw Error('诊断参数无效');
       const runId=args.runId===undefined?id():str(args.runId),label=args.label===undefined?'':str(args.label);
       if(!/^[0-9A-Za-z_-]{1,80}$/.test(runId)||label.length>80)throw Error('诊断标识无效');
       setPlaying(false);const output=await window.controlAPI.checkOutput(str(args.path));
-      return await exportMovie(output,args.quality,true,{runId,label,startFrame,endFrame,preRollFrames,profile:args.profile!==false,references:args.gpuVideo!==true&&args.references===true,skipPreRender:args.skipPreRender===true,gpuColor:args.gpuColor===true,gpuVideo:args.gpuVideo===true});
+      return await exportMovie(output,args.quality,true,{runId,label,startFrame,endFrame,preRollFrames,profile:args.profile!==false,references:args.gpuVideo!==true&&args.references===true,skipPreRender:args.skipPreRender===true,gpuColor:args.gpuColor===true,gpuVideo:args.gpuVideo===true,mergedFrame:args.mergedFrame===true});
     }
     if(command==='session.close'){
       if(fingerprint()!==savedFingerprint&&args.discard!==true)throw Error('当前工程有未保存的更改');setTimeout(()=>window.controlAPI.close(),100);return {closing:true};

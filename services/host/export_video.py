@@ -1,7 +1,7 @@
 """Experimental offline MP4 encoder; frame images are supplied by the Unity Player."""
 import math
 import time
-from export_diagnostics import sample_range, validate_profile, validate_gpu_video, validate_gpu_reply, validate_gpu_frames
+from export_diagnostics import sample_range, validate_profile, validate_gpu_video, validate_gpu_reply, validate_gpu_frames, validate_merged_frame
 import hashlib
 import json
 import os
@@ -211,6 +211,7 @@ class VideoExport:
         self.start_frame,self.end_frame=sample_range(config,self.frames,self.native_post)
         self.frames=self.end_frame-self.start_frame
         self.gpu_video=validate_gpu_video(config,self.native_post,self.native_ui,self.frames)
+        self.merged_frame=validate_merged_frame(config,self.gpu_video)
         if self.gpu_video:
             if gpu_input is None or Path(gpu_input).name!='export-gpu.h264':raise ValueError('GPU 导出输入路径无效')
             gpu_input=Path(gpu_input).resolve();sidecar=gpu_input.with_suffix('.frames.jsonl')

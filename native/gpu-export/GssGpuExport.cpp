@@ -14,10 +14,27 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <chrono>
+#include <sstream>
 #include "include/nvEncodeAPI.h"
 using Microsoft::WRL::ComPtr;
 namespace {
 constexpr int PoolSize=8;
+using Clock=std::chrono::steady_clock;
+double milliseconds(Clock::time_point start){return std::chrono::duration<double,std::milli>(Clock::now()-start).count();}
+// Each file has exactly one writer. Profiling never queries the session lock.
+struct TraceFile {
+ HANDLE handle=INVALID_HANDLE_VALUE;
+ ~TraceFile(){if(handle!=INVALID_HANDLE_VALUE)CloseHandle(handle);}
+ void open(const std::wstring& path){handle=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);if(handle==INVALID_HANDLE_VALUE)throw std::runtime_error("Cannot create GPU diagnostic trace");}
+};
+struct Trace {
+ HANDLE handle;int index,count=0;double globalMs;Clock::time_point start,last;
+ const char* names[12]{};double values[12]{};
+ Trace(HANDLE h,int i,double global=0):handle(h),index(i),globalMs(global){if(handle!=INVALID_HANDLE_VALUE)start=last=Clock::now();}
+ void mark(const char* name){if(handle==INVALID_HANDLE_VALUE)return;auto now=Clock::now();names[count]=name;values[count++]=std::chrono::duration<double,std::milli>(now-last).count();last=now;}
+ ~Trace(){if(handle==INVALID_HANDLE_VALUE)return;try{std::ostringstream s;s<<"{\"index\":"<<index<<",\"globalLockMs\":"<<globalMs<<",\"nativeTotalMs\":"<<milliseconds(start);for(int i=0;i<count;i++)s<<",\""<<names[i]<<"\":"<<values[i];s<<"}\n";auto line=s.str();DWORD written=0;WriteFile(handle,line.data(),static_cast<DWORD>(line.size()),&written,nullptr);}catch(...){/* Diagnostic failures must not throw during unwinding. */}}
+};
 struct Slot {
  ComPtr<ID3D11Texture2D> texture;
  NV_ENC_REGISTERED_PTR registered=nullptr;
@@ -50,7 +67,14 @@ struct Session {
  std::deque<int> pending;
  std::string error;
  std::thread output;
+ TraceFile submitTrace,outputTrace;
  Session(int w,int h,int rate):width(w),height(h),fps(rate){}
+ void openTrace(){
+  wchar_t test[8]{},directory[32768]{};GetEnvironmentVariableW(L"CREATOR_TEST_INSTANCE",test,8);
+  if(std::wstring(test)!=L"1")return;DWORD size=GetEnvironmentVariableW(L"CREATOR_GPU_TRACE_DIR",directory,32768);if(!size)return;if(size>=32768)throw std::runtime_error("GPU trace directory too long");
+  static unsigned serial=0;auto prefix=std::wstring(directory)+L"\\gpu-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(++serial);
+  submitTrace.open(prefix+L"-submit.jsonl");outputTrace.open(prefix+L"-output.jsonl");
+ }
  void fail(const std::string& message){std::lock_guard<std::mutex> guard(errorMutex);if(!failed){error=message;failed=true;}changed.notify_all();}
  void check(NVENCSTATUS code,const char* operation){if(code!=NV_ENC_SUCCESS)throw std::runtime_error(std::string(operation)+": NVENC "+std::to_string(code));}
  static void write(HANDLE handle,const void* data,DWORD size){DWORD count=0;if(!WriteFile(handle,data,size,&count,nullptr)||count!=size)throw std::runtime_error("GPU video output write failed");}
@@ -96,38 +120,49 @@ struct Session {
   }
   output=std::thread([this]{consume();});
  }
- void submit(int index){
+ void submit(int index,double globalMs){
+  Trace trace(submitTrace.handle,index,globalMs);
   if(failed)throw std::runtime_error("GPU export session failed");
   if(index!=accepted.load())throw std::runtime_error("GPU frame sequence mismatch");
   if(!source)throw std::runtime_error("GPU source missing");if(!encoder)initialize();
+  trace.mark("initializeMs");
   auto& slot=slots[index%PoolSize];
   {std::unique_lock<std::mutex> lock(mutex);if(!changed.wait_for(lock,std::chrono::seconds(30),[&]{return !slot.busy||failed;}))throw std::runtime_error("Encoder backpressure timeout");}
   if(failed)throw std::runtime_error("Encoder output failed");slot.busy=true;slot.index=index;
+  trace.mark("poolWaitMs");
   // Only the Unity render thread uses the immediate context.
   context->CopyResource(slot.texture.Get(),source.Get());
+  trace.mark("copyMs");
   std::lock_guard<std::mutex> encodeGuard(encoderMutex);
+  trace.mark("encoderLockMs");
   NV_ENC_MAP_INPUT_RESOURCE map{};map.version=NV_ENC_MAP_INPUT_RESOURCE_VER;map.registeredResource=slot.registered;
   auto mapStatus=api.nvEncMapInputResource(encoder,&map);
+  trace.mark("mapMs");
   if(mapStatus!=NV_ENC_SUCCESS)throw std::runtime_error("MapInput frame "+std::to_string(index)+" completed "+std::to_string(completed.load())+": NVENC "+std::to_string(mapStatus));
   slot.mapped=map.mappedResource;
   NV_ENC_PIC_PARAMS pic{};pic.version=NV_ENC_PIC_PARAMS_VER;pic.inputBuffer=slot.mapped;pic.bufferFmt=format;pic.inputWidth=width;pic.inputHeight=height;pic.outputBitstream=slot.bitstream;pic.completionEvent=slot.ready;pic.pictureStruct=NV_ENC_PIC_STRUCT_FRAME;pic.inputTimeStamp=index;pic.inputDuration=1;
   check(api.nvEncEncodePicture(encoder,&pic),"EncodePicture");
+  trace.mark("encodeMs");
   {std::lock_guard<std::mutex> lock(mutex);pending.push_back(index%PoolSize);accepted++;}changed.notify_all();
  }
  void consume(){
   try{while(true){
    int number;
    {std::unique_lock<std::mutex> lock(mutex);changed.wait(lock,[&]{return stopping||!pending.empty();});if(pending.empty())break;number=pending.front();pending.pop_front();}
-   auto& slot=slots[number];if(WaitForSingleObject(slot.ready,30000)!=WAIT_OBJECT_0)throw std::runtime_error("NVENC completion timeout");
+   auto& slot=slots[number];Trace trace(outputTrace.handle,slot.index);if(WaitForSingleObject(slot.ready,30000)!=WAIT_OBJECT_0)throw std::runtime_error("NVENC completion timeout");
+   trace.mark("eventWaitMs");
    std::lock_guard<std::mutex> encodeGuard(encoderMutex);
+   trace.mark("encoderLockMs");
    NV_ENC_LOCK_BITSTREAM bits{};bits.version=NV_ENC_LOCK_BITSTREAM_VER;bits.outputBitstream=slot.bitstream;bits.doNotWait=0;check(api.nvEncLockBitstream(encoder,&bits),"LockBitstream");
+   trace.mark("bitstreamLockMs");
    try{
     if(bits.outputTimeStamp!=static_cast<uint64_t>(slot.index)||slot.index!=completed)throw std::runtime_error("Encoded timestamp/order mismatch");
     write(file,bits.bitstreamBufferPtr,bits.bitstreamSizeInBytes);
     auto line=std::string("{\"index\":")+std::to_string(slot.index)+",\"timestamp\":"+std::to_string(bits.outputTimeStamp)+",\"duration\":1,\"timebaseNum\":1,\"timebaseDen\":"+std::to_string(fps)+",\"bytes\":"+std::to_string(bits.bitstreamSizeInBytes)+"}\n";
     write(metadata,line.data(),static_cast<DWORD>(line.size()));
+    trace.mark("writeMs");
    }catch(...){api.nvEncUnlockBitstream(encoder,slot.bitstream);throw;}
-   check(api.nvEncUnlockBitstream(encoder,slot.bitstream),"UnlockBitstream");check(api.nvEncUnmapInputResource(encoder,slot.mapped),"UnmapInput");slot.mapped=nullptr;slot.busy=false;completed++;changed.notify_all();
+   check(api.nvEncUnlockBitstream(encoder,slot.bitstream),"UnlockBitstream");trace.mark("unlockMs");check(api.nvEncUnmapInputResource(encoder,slot.mapped),"UnmapInput");trace.mark("unmapMs");slot.mapped=nullptr;slot.busy=false;completed++;changed.notify_all();
   }}catch(const std::exception& e){fail(e.what());}
  }
  void close(){
@@ -161,7 +196,7 @@ struct Session {
 std::mutex globalMutex;
 std::unique_ptr<Session> session;
 std::string lastError;
-void __stdcall renderEvent(int index){std::lock_guard<std::mutex> guard(globalMutex);if(!session)return;try{session->submit(index);}catch(const std::exception& e){session->fail(e.what());}}
+void __stdcall renderEvent(int index){auto start=Clock::now();std::lock_guard<std::mutex> guard(globalMutex);if(!session)return;try{session->submit(index,milliseconds(start));}catch(const std::exception& e){session->fail(e.what());}}
 }
 #define API extern "C" __declspec(dllexport)
 API int GssCreate(int width,int height,int fps,const wchar_t* path){
@@ -173,6 +208,7 @@ API int GssCreate(int width,int height,int fps,const wchar_t* path){
   next->file=CreateFileW(path,GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);if(next->file==INVALID_HANDLE_VALUE)throw std::runtime_error("GPU output exists or cannot be created");
   std::wstring metadata(path);auto dot=metadata.rfind(L'.');if(dot!=std::wstring::npos)metadata.resize(dot);metadata+=L".frames.jsonl";
   next->metadata=CreateFileW(metadata.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);if(next->metadata==INVALID_HANDLE_VALUE)throw std::runtime_error("GPU metadata exists or cannot be created");
+  next->openTrace();
   session=std::move(next);lastError.clear();return 0;
  }catch(const std::exception& e){lastError=e.what();return -1;}
 }

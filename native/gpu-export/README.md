@@ -47,3 +47,19 @@ also suffered long submission-acknowledgement stalls. Decoded frames and
 audio matched the capped outputs. Do not infer stable throughput from the
 fastest sample or enable this as a production default without resolving
 those stalls and validating longer exports.
+
+Native CPU wall-time tracing is available only with `CREATOR_TEST_INSTANCE=1`
+and `CREATOR_GPU_TRACE_DIR` pointing to a new diagnostic directory. Separate
+single-writer JSONL files record each frame's submit and output stages; frame
+indices correlate with the existing Unity report. Validate row counts before
+using a trace. The spans include API/lock waits and are not GPU timestamps.
+Tracing is disabled in normal sessions and does not change encoder settings.
+
+`video.benchmark` may opt into `mergedFrame: true` together with `gpuVideo: true`.
+The host requires `creator-merged-export-v1` and an active bounded GPU job.
+Each frame carries its state in one request. Unity validates/applies the state,
+waits for media, then captures/submits in the same command and replies once.
+Scene readiness, animation sampling, settle waits, frame order and native pool
+ownership remain in place. The host owns frame dimensions, index and flags;
+nested state cannot override them. Failure uses the existing export cleanup.
+Normal exports and the default diagnostic mode keep separate requests.

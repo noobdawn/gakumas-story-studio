@@ -14,7 +14,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import host
-from export_diagnostics import validate_gpu_frames, validate_gpu_reply, validate_gpu_video
+import dedicated_effects
+import visual_media
+from export_diagnostics import validate_gpu_frames, validate_gpu_reply, validate_gpu_video, validate_merged_frame, merged_frame_request
 from export_video import VideoExport
 
 
@@ -54,6 +56,24 @@ class GpuExportTest(unittest.TestCase):
         for n in range(1, 4):
             job.write_gpu(dict(ok=True, gpuAccepted=n, gpuCompleted=n - 1))
         job.complete_gpu(dict(ok=True, gpuAccepted=3, gpuCompleted=3))
+
+    def test_merged_mode_requires_gpu_job_and_boolean_flag(self):
+        self.assertFalse(validate_merged_frame({}, False))
+        self.assertTrue(validate_merged_frame({'mergedFrame': True}, True))
+        for value, gpu in [(True, False), (1, True), ('true', True), (None, True)]:
+            with self.subTest(value=value, gpu=gpu), self.assertRaises(ValueError):
+                validate_merged_frame({'mergedFrame': value}, gpu)
+
+    def test_merged_packet_preserves_state_but_host_owns_frame_identity(self):
+        state = dict(kind='gpu-export-cancel', token='untrusted', exportIndex=99,
+                     gpuVideo=False, frameWidth=16, sceneId='trainingroom')
+        frame = dict(kind='frame', token='test', exportIndex=3, gpuVideo=True, frameWidth=1920)
+        packet = merged_frame_request(state, frame, True)
+        self.assertEqual(packet, dict(frame, kind='state-frame', sceneId='trainingroom'))
+        self.assertEqual(state['kind'], 'gpu-export-cancel')
+        for supplied, enabled in [(None, True), ([], True), (state, False)]:
+            with self.subTest(enabled=enabled), self.assertRaises(ValueError):
+                merged_frame_request(supplied, frame, enabled)
 
     def test_delays_mux_and_copies_video_after_completed_frames(self):
         job = self.job()
@@ -157,7 +177,7 @@ class GpuExportTest(unittest.TestCase):
         factory.body += ast.parse('return Handler').body
         module = ast.fix_missing_locations(ast.Module(body=[factory], type_ignores=[]))
         player = self.root / 'Player.exe'
-        for marker in ('creator-gpu-export-v1', 'creator-post-effects-v1', 'creator-export-profile-v1'):
+        for marker in ('creator-gpu-export-v1', 'creator-post-effects-v1', 'creator-export-profile-v1', 'creator-merged-export-v1'):
             (self.root / marker).touch()
         commands = []
         pending = []
@@ -166,7 +186,7 @@ class GpuExportTest(unittest.TestCase):
             commands.append(request)
             kind = request.get('kind')
             if kind == 'gpu-export-start':reply = dict(ok=True, gpuAccepted=0, gpuCompleted=0)
-            elif kind == 'frame':
+            elif kind in ('frame', 'state-frame'):
                 n = request['exportIndex'] + 1
                 reply = dict(ok=False, error='GPU failed') if fail_frame else dict(ok=True, gpuAccepted=n, gpuCompleted=n)
             elif kind == 'gpu-export-finish':
@@ -178,7 +198,8 @@ class GpuExportTest(unittest.TestCase):
                      conn=SimpleNamespace(sendall=sendall), stream=SimpleNamespace(readline=lambda n: pending.pop(0)),
                      token='test', origin='local', PreviewRequestHandler=host.PreviewRequestHandler,
                      export_capable=True, player=player, output=self.root, library_root=self.root,
-                     ui_graph_capable=True, game_dialogue=False, args=SimpleNamespace(dialogue_assets=None))
+                     ui_graph_capable=True, game_dialogue=False, args=SimpleNamespace(dialogue_assets=None),
+                     dedicated_effects=dedicated_effects, visual_media=visual_media)
         exec(compile(module, str(Path(host.__file__)), 'exec'), scope)
         cls = scope['make_handler']()
         handler = cls.__new__(cls)
@@ -191,6 +212,27 @@ class GpuExportTest(unittest.TestCase):
             handler.do_POST()
             return response[0]
         return request, commands
+
+    def test_host_merged_frame_uses_one_validated_command_and_finishes(self):
+        request, commands = self.handler()
+        reply, status = request('export-start', dict(self.config, mergedFrame=True))
+        self.assertEqual(status, 200)
+        self.assertTrue(reply['mergedFrame'])
+        for i in range(3):
+            reply, status = request('export-frame', dict(index=i, state=dict(sceneId='trainingroom', mediaDraws=[], kind='gpu-export-cancel', token='bad', exportIndex=99)))
+            self.assertEqual(status, 200, reply)
+            self.assertEqual(commands[-1]['kind'], 'state-frame')
+            self.assertEqual(commands[-1]['token'], 'test')
+            self.assertEqual(commands[-1]['exportIndex'], i)
+            self.assertEqual(commands[-1]['sceneId'], 'trainingroom')
+        self.assertEqual(request('export-finish', {})[1], 200)
+        self.assertEqual([r['kind'] for r in commands], ['gpu-export-start']+['state-frame']*3+['gpu-export-finish'])
+
+    def test_host_missing_merged_state_cancels_without_submitting_frame(self):
+        request, commands = self.handler()
+        self.assertEqual(request('export-start', dict(self.config, mergedFrame=True))[1], 200)
+        self.assertEqual(request('export-frame', dict(index=0))[1], 502)
+        self.assertEqual([r['kind'] for r in commands], ['gpu-export-start', 'gpu-export-cancel'])
 
     def test_host_gpu_lifecycle_ignores_untrusted_paths_and_png_requests(self):
         request, commands = self.handler()
