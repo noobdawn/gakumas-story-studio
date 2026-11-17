@@ -2,7 +2,10 @@
 
 Opt-in diagnostics only: `video.benchmark` with `gpuVideo: true`, native final
 composition and a new destination. The merged GPU diagnostic permits at most
-1,800 frames; other diagnostic paths remain capped at 300. Normal exports keep
+1,800 frames; other diagnostic paths remain capped at 300. An explicit
+`fullProject: true` diagnostic permits up to 216,000 frames, only with merged
+GPU capture, queue capacity 4 or 8, a new destination and the complete project
+range. It requires the `creator-full-export-v1` Player marker. Normal exports keep
 the existing PNG / libx264 route. NVIDIA hardware, a compatible driver,
 Direct3D 11 and Unity Linear color space are required; failure is explicit.
 
@@ -21,6 +24,16 @@ requests, and cancellation drains the current frame before native disposal.
 This reuses the existing display texture and native pool; it does not add
 multi-texture rendering or change encoding settings. Queue mode is diagnostic
 only and requires the `creator-queued-export-v1` Player capability marker.
+
+Full-project reports retain aggregates, first/last frames and eight slow samples
+instead of every frame reply. Native traces and timestamp validation remain
+streamed; the sidecar file budget scales with the authorized frame count.
+Only the explicit full-project control command gets a 30-minute timeout.
+A local 1080p/30fps full export (37,951 frames, 21:05.03) took 174.92 seconds,
+including preparation, audio processing and muxing. All frames decoded with
+correct CFR timestamps, and audio packet continuity/stream duration passed.
+This is one run on an RTX 4090, not a repeated baseline or a full visual/audio
+perceptual comparison. Normal UI export remains unchanged.
 
 The first experiment uses H.264 High, P4 HQ, constant QP 18, no B frames and no
 lookahead. QP 18 is **not equivalent** to x264 CRF 18. Source frame `i` has

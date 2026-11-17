@@ -1,8 +1,8 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.CreatorExportQueue=factory();})(globalThis,()=>{
   'use strict';
   const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
-  async function run({total,capacity,session,makeFrame,request,cancelled,onFrame,onProgress,clock=()=>performance.now(),sleep=()=>new Promise(r=>setTimeout(r,1))}){
-    if(![1,4,8].includes(capacity)||!Number.isInteger(total)||total<1||total>1800||typeof session!=='string'||session.length!==32)throw Error('导出队列设置无效');
+  async function run({total,capacity,session,fullProject=false,makeFrame,request,cancelled,onFrame,onProgress,clock=()=>performance.now(),sleep=()=>new Promise(r=>setTimeout(r,1))}){
+    if(typeof fullProject!=='boolean'||fullProject&&![4,8].includes(capacity)||![1,4,8].includes(capacity)||!Number.isInteger(total)||total<1||total>(fullProject?216000:1800)||typeof session!=='string'||session.length!==32)throw Error('导出队列设置无效');
     let enqueued=0,received=0,pending=[],requests=0,backpressure=0,lastProgress=clock(),last=null;
     const waiting=new Map();
     while(received<total){
@@ -37,5 +37,21 @@
     }
     return {cancelled:false,requests,backpressure,last};
   }
-  return {run};
+  // Full-project diagnostics retain aggregates and eight slow samples, not a
+  // growing array of all state/reply objects. Native frame logs remain streamed.
+  function createSummary(){
+    const value={count:0,first:null,last:null,slowest:[],stages:{},snapshotMs:0,queueLatencyMs:0};
+    return {value,add(row){
+      if(row.index!==value.count)throw Error('诊断汇总帧序无效');
+      value.count++;value.first??=row;value.last=row;
+      value.snapshotMs+=row.snapshotMs||0;value.queueLatencyMs+=row.queueLatencyMs||0;
+      const cost=row.frame?.exportTiming?.totalMs||0;
+      value.slowest.push({cost,row});value.slowest.sort((a,b)=>b.cost-a.cost);value.slowest.length=Math.min(8,value.slowest.length);
+      for(const stage of row.frame?.exportTiming?.stages||[]){
+        const sum=value.stages[stage.name]??={ms:0,calls:0,maxMs:0};
+        sum.ms+=stage.ms;sum.calls+=stage.calls;sum.maxMs=Math.max(sum.maxMs,stage.ms);
+      }
+    }};
+  }
+  return {run,createSummary};
 });

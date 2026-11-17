@@ -1,10 +1,34 @@
 import copy
 import unittest
+import json
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from export_queue import capacity, frames, consume, require_session
 
 
 class ExportQueueTest(unittest.TestCase):
+    def test_full_project_requires_opt_in_complete_range_and_bounded_queue(self):
+        from export_diagnostics import sample_range,validate_gpu_video
+        config=dict(fullProject=True,gpuVideo=True,mergedFrame=True,queueCapacity=8,newOnly=True,diagnosticRange=dict(startFrame=0,endFrame=37951))
+        self.assertEqual(sample_range(config,37951,True),(0,37951))
+        self.assertTrue(validate_gpu_video(config,True,False,37951))
+        for changes in (dict(fullProject=False),dict(fullProject=1),dict(queueCapacity=1),dict(queueCapacity=True),dict(mergedFrame=False),dict(gpuVideo=False),dict(newOnly=False),dict(diagnosticRange=None),dict(diagnosticRange=dict(startFrame=1,endFrame=37951))):
+            with self.subTest(changes=changes),self.assertRaises(ValueError):sample_range(dict(config,**changes),37951,True)
+        with self.assertRaises(ValueError):sample_range(dict(config,diagnosticRange=dict(startFrame=0,endFrame=216001)),216001,True)
+
+    def test_full_project_sidecar_streams_past_old_file_limit_and_checks_tail(self):
+        from export_diagnostics import validate_gpu_frames
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'frames.jsonl'
+            def write(bad=False):
+                with path.open('w',encoding='utf-8') as stream:
+                    for i in range(37951):stream.write(json.dumps(dict(index=i,timestamp=i+(1 if bad and i==37950 else 0),duration=1,timebaseNum=1,timebaseDen=30,bytes=100))+'\n')
+            write();self.assertGreater(path.stat().st_size,1024*1024)
+            self.assertEqual(validate_gpu_frames(path,37951,30),37951)
+            write(True)
+            with self.assertRaises(ValueError):validate_gpu_frames(path,37951,30)
+
     def job(self):
         j=SimpleNamespace(queue_capacity=4,queue_session='a'*32,queue_enqueued=0,count=0,
             gpu_completed=0,frames=9,width=1920,height=1080,native_post=True,profile=True,start_frame=900,run_id='test')

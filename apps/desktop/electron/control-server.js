@@ -16,6 +16,7 @@ function create({token,dispatch}) {
     const request=JSON.parse(raw);const given=typeof request.token==='string'&&/^[0-9a-f]{64}$/i.test(request.token)?Buffer.from(request.token,'hex'):Buffer.alloc(0);
     if(given.length!==secret.length||!crypto.timingSafeEqual(given,secret))throw Error('认证失败');
     if(typeof request.id!=='string'||request.id.length<1||request.id.length>100||typeof request.command!=='string'||request.command.length>80||!request.args||typeof request.args!=='object'||Array.isArray(request.args))throw Error('请求格式无效');
+    socket.setTimeout(request.command==='video.benchmark'&&request.args.fullProject===true?1800000:300000);
     if(busy)throw Error('控制接口正在处理其他请求');busy=true;
     try{const result=await dispatch(request.command,request.args);reply={id:request.id,ok:true,result};}finally{busy=false;}
    }catch(error){reply={ok:false,error:String(error.message||error)};}

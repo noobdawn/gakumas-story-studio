@@ -24,19 +24,30 @@ def merged_frame_request(state, frame, enabled):
 
 
 def diagnostic_limit(config):
-    # Only the validated merged GPU path gets a bounded 60s-at-30fps probe.
+    full = config.get('fullProject', False)
+    if type(full) is not bool:
+        raise ValueError('完整工程诊断开关无效')
+    if full:
+        if (config.get('gpuVideo') is not True or config.get('mergedFrame') is not True
+            or type(config.get('queueCapacity')) is not int or config['queueCapacity'] not in (4,8)
+            or config.get('newOnly') is not True):
+            raise ValueError('完整工程诊断需要合并 GPU、有界队列和新输出')
+        return 216000
     return 1800 if config.get('gpuVideo') is True and config.get('mergedFrame') is True else 300
 
 
 def sample_range(config, total_frames, native_post):
+    limit = diagnostic_limit(config)
     value = config.get('diagnosticRange')
+    if config.get('fullProject') and (not isinstance(value,dict) or value.get('startFrame')!=0 or value.get('endFrame')!=total_frames):
+        raise ValueError('完整工程诊断必须覆盖全部帧')
     if value is None:
         return 0, total_frames
     if not native_post or not config.get('newOnly') or not isinstance(value, dict):
         raise ValueError('诊断区间需要原生合成与新输出文件')
     start, end = value.get('startFrame'), value.get('endFrame')
-    if type(start) is not int or type(end) is not int or not 0 <= start < end <= total_frames or end-start > diagnostic_limit(config):
-        raise ValueError(f'诊断区间必须是工程内的 1～{diagnostic_limit(config)} 帧')
+    if type(start) is not int or type(end) is not int or not 0 <= start < end <= total_frames or end-start > limit:
+        raise ValueError(f'诊断区间必须是工程内的 1～{limit} 帧')
     return start, end
 
 
@@ -67,7 +78,10 @@ def validate_gpu_reply(reply, accepted, previous_completed=0, final=False):
 
 def validate_gpu_frames(path, frames, fps):
     # This PoC is CFR with no B frames: output timestamp equals local input index.
-    if not path.is_file() or path.stat().st_size > 1024 * 1024:
+    if type(frames) is not int or not 1 <= frames <= 216000:
+        raise ValueError('GPU 帧记录数量无效')
+    # Stream records; the file budget scales with the authorized frame count.
+    if not path.is_file() or path.stat().st_size > max(1024 * 1024, frames * 512):
         raise ValueError('GPU 帧记录缺失或过大')
     with path.open(encoding='utf-8') as stream:
         count = 0

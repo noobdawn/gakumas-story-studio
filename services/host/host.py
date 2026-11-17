@@ -559,6 +559,7 @@ def main():
                                 if message.get('gpuVideo') is True and not (player.parent/'creator-gpu-export-v1').is_file():raise ValueError('Player 不支持 GPU 视频诊断')
                                 if message.get('mergedFrame') is True and not (player.parent/'creator-merged-export-v1').is_file():raise ValueError('Player 不支持合并帧诊断')
                                 if message.get('queueCapacity',0) and not (player.parent/'creator-queued-export-v1').is_file():raise ValueError('Player 不支持状态队列诊断')
+                                if message.get('fullProject') is True and not (player.parent/'creator-full-export-v1').is_file():raise ValueError('Player 不支持完整工程诊断')
                                 from export_video import VideoExport
                                 message['nativePostEffects'] = message.get('nativePostEffects') is True
                                 if message['nativePostEffects'] and not (player.parent/'creator-post-effects-v1').is_file():raise ValueError('当前 Player 不支持画面效果')
