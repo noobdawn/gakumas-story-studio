@@ -2,6 +2,8 @@
  'use strict';
  const visualTypes=['world','media','dialogue','ui','visualFilter','visualEffect'];
  const visual=t=>visualTypes.includes(t.type), processing=t=>['visualFilter','visualEffect'].includes(t.type);
+ const layoutDefaults={x:0,y:0,scale:1,width:1,height:1,opacity:1};
+ function layout(value){if(value===undefined)return {...layoutDefaults};fail(value&&typeof value==='object'&&!Array.isArray(value),'画面变换无效');for(const [k,v] of Object.entries(value))fail(k in layoutDefaults&&Number.isFinite(v)&&(k==='opacity'?v>=0&&v<=1:k==='x'||k==='y'?v>=-10&&v<=10:v>=.001&&v<=20),'画面变换参数无效');return {...layoutDefaults,...value};}
  const active=(c,time)=>time>=c.start&&time<c.start+c.len;
  const fail=(ok,msg)=>{if(!ok)throw Error('画面合成：'+msg);};
  function initialize(s,id){
@@ -22,8 +24,8 @@
  }
  function join(s,x){const t=s.tracks.find(t=>t.id===x.trackId);if(!t||t.type!=='media')return null;const a=t.clips.find(c=>c.id===x.leftId),b=t.clips.find(c=>c.id===x.rightId);if(!a||!b||Math.abs(a.start+a.len-b.start)>1e-7)return null;return {track:t,a,b,cut:b.start};}
  function validate(s){if(s.compositionVersion===undefined)return;fail(s.compositionVersion===1,'不支持的合成版本');fail(s.tracks.filter(t=>t.type==='world').length<=1,'演出输出不能重复');
-  for(const t of tracks(s)){if(t.type==='world')fail(t.clips.length===0,'演出输出由相机控制轨驱动');if(['media','dialogue'].includes(t.type)){const cs=[...t.clips].sort((a,b)=>a.start-b.start);for(let i=1;i<cs.length;i++)fail(cs[i].start>=cs[i-1].start+cs[i-1].len-1e-7,'同轨画面片段不能重叠');}
-   for(const c of t.clips){if(c.dialogueLayout){fail(t.type==='dialogue','仅字幕支持文字布局');for(const [k,v] of Object.entries(c.dialogueLayout))fail(['x','y','scale','opacity'].includes(k)&&Number.isFinite(v)&&(k==='opacity'?v>=0&&v<=1:k==='scale'?v>=.1&&v<=5:v>=-2&&v<=2),'文字布局无效');}
+  for(const t of tracks(s)){layout(t.compositionLayout);if(t.type==='world')fail(t.clips.length===0,'演出输出由相机控制轨驱动');if(['media','dialogue'].includes(t.type)){const cs=[...t.clips].sort((a,b)=>a.start-b.start);for(let i=1;i<cs.length;i++)fail(cs[i].start>=cs[i-1].start+cs[i-1].len-1e-7,'同轨画面片段不能重叠');}
+   for(const c of t.clips){layout(c.compositionLayout);if(c.uiKind==='code'){const U=typeof module==='object'?require('./code-ui'):globalThis.CreatorCodeUI;U.validate(c.codeUI);}if(c.dialogueLayout){fail(t.type==='dialogue','仅字幕支持文字布局');for(const [k,v] of Object.entries(c.dialogueLayout))fail(['x','y','scale','opacity'].includes(k)&&Number.isFinite(v)&&(k==='opacity'?v>=0&&v<=1:k==='scale'?v>=.1&&v<=5:v>=-2&&v<=2),'文字布局无效');}
     if(processing(t)){const v=c.visualEffect;fail(v&&P.trackType(v.preset)===t.type,'滤镜与特效须分别放置');fail(['below','clips','categories'].includes(v.scope),'效果作用范围无效');if(v.scope==='clips'){fail(Array.isArray(v.clipIds)&&v.clipIds.length<=128&&new Set(v.clipIds).size===v.clipIds.length,'效果目标无效');const valid=new Set(s.tracks.filter(t=>['media','dialogue','ui'].includes(t.type)).flatMap(t=>t.clips.map(c=>c.id)));fail(v.clipIds.every(x=>valid.has(x)),'效果目标片段已不存在');fail(Number.isSafeInteger(v.order)&&v.order>=0&&v.order<=10000,'效果顺序无效');}}
    }
   }
@@ -41,15 +43,15 @@
   const nodes=[];
   for(const t of [...ordered].reverse()){
    if(processing(t)){for(const c of t.clips)if(effects.includes(c)&&c.visualEffect.scope==='below')nodes.push({kind:'effect',id:c.id,effects:[layer(c,time)]});continue;}
-   if(t.type==='world'){nodes.push({kind:'world',id:t.id});continue;}
+   if(t.type==='world'){nodes.push({kind:'world',id:t.id,layout:layout(t.compositionLayout)});continue;}
    if(t.type==='media'&&s.objects.find(o=>o.id===t.target)?.visible===false)continue;
-   if(t.type==='media'){const x=transitionAt(s,t,time);if(x){nodes.push({kind:'transition',id:x.id,leftId:x.leftId,rightId:x.rightId,transition:x.kind,progress:x.progress,leftEffects:local(x.leftId),rightEffects:local(x.rightId)});continue;}}
-   for(const c of t.clips.filter(c=>active(c,time))){const node={kind:t.type,id:c.id,effects:local(c.id)};
+   if(t.type==='media'){const x=transitionAt(s,t,time);if(x){nodes.push({kind:'transition',id:x.id,leftId:x.leftId,rightId:x.rightId,transition:x.kind,progress:x.progress,leftEffects:local(x.leftId),rightEffects:local(x.rightId),leftLayout:layout(x.a.compositionLayout),rightLayout:layout(x.b.compositionLayout)});continue;}}
+   for(const c of t.clips.filter(c=>active(c,time))){const node={kind:t.type,id:c.id,effects:local(c.id),layout:layout(c.compositionLayout)};
     if(t.type==='dialogue'){const d=s.dialogues.find(d=>d.id===c.dialogue);if(!d)continue;Object.assign(node,{speaker:d.speaker.slice(0,100),text:text(d,c).slice(0,500),style:d.uiStyle||'box',color:C.resolve(s,d)[0],colorEnd:C.resolve(s,d)[1],nameTextColor:C.label(s,d),x:c.dialogueLayout?.x||0,y:c.dialogueLayout?.y||0,scale:c.dialogueLayout?.scale??1,opacity:c.dialogueLayout?.opacity??1});}
-    if(t.type==='ui')node.draws=ui(c);nodes.push(node);
+    if(t.type==='ui'){if(c.uiKind==='code')Object.assign(node,{kind:'codeUI',codeUI:c.codeUI,localTime:time-c.start+(c.sourceOffset||0),duration:c.len+(c.sourceOffset||0)});else node.draws=ui(c);}nodes.push(node);
    }
   }
   fail(nodes.length<=256,'同时合成的图层过多');return {version:1,time,nodes};
  }
- return {visual,processing,tracks,initialize,reconcile,validate,join,transitionAt,mediaSamples,packet};
+ return {layout,layoutDefaults,visual,processing,tracks,initialize,reconcile,validate,join,transitionAt,mediaSamples,packet};
 });

@@ -4,6 +4,8 @@ using System.Linq;
 using UnityEngine;
 
 [Serializable] public sealed class CreatorCompositionNode {
+ public CreatorCompositionLayout layout,leftLayout,rightLayout;
+ public string png;
  public string kind,id,leftId,rightId,transition,speaker,text,style,color,colorEnd,nameTextColor;
  public float progress,x,y,scale=1,opacity=1;
  public CreatorEffectLayer[] effects,leftEffects,rightEffects;
@@ -18,16 +20,23 @@ using UnityEngine;
   foreach(var n in state.nodes){
    if(n==null||string.IsNullOrEmpty(n.id)||n.id.Length>100||!ids.Add(n.id))throw new Exception("Invalid composition layer");
    CreatorPostEffects.ValidateLayers(n.effects);CreatorPostEffects.ValidateLayers(n.leftEffects);CreatorPostEffects.ValidateLayers(n.rightEffects);
+   CreatorCompositionLayout.Validate(n.layout);CreatorCompositionLayout.Validate(n.leftLayout);CreatorCompositionLayout.Validate(n.rightLayout);
    switch(n.kind){
     case "world":if(++worlds>1)throw new Exception("Duplicate world output");break;
     case "media":if(!mediaIds.Contains(n.id))throw new Exception("Missing media layer");break;
     case "transition":if(!mediaIds.Contains(n.leftId??"")||!mediaIds.Contains(n.rightId??"")||n.leftId==n.rightId||!new[]{"dissolve","black","wipe"}.Contains(n.transition)||!Finite(n.progress,0,1))throw new Exception("Invalid clip transition");break;
     case "dialogue":if(n.text==null||n.text.Length>500||n.speaker==null||n.speaker.Length>100||!new[]{"box","subtitle","game"}.Contains(n.style)||!Finite(n.x,-2,2)||!Finite(n.y,-2,2)||!Finite(n.scale,.1f,5)||!Finite(n.opacity,0,1))throw new Exception("Invalid composition dialogue");break;
     case "ui":ui.Set(n.draws);break;
+    case "codeUI":if(string.IsNullOrEmpty(n.png)||n.png.Length>1200000)throw new Exception("Invalid code UI image");break;
     case "effect":break;
     default:throw new Exception("Unknown composition layer");
    }
   }
  }
  static bool Finite(float v,float min,float max)=>!float.IsNaN(v)&&!float.IsInfinity(v)&&v>=min&&v<=max;
+}
+
+[Serializable] public sealed class CreatorCompositionLayout {
+ public float x,y,scale=1,width=1,height=1,opacity=1;
+ public static void Validate(CreatorCompositionLayout p){if(p==null)return;foreach(var v in new[]{p.x,p.y,p.scale,p.width,p.height,p.opacity})if(float.IsNaN(v)||float.IsInfinity(v))throw new Exception("Invalid composition transform");if(Mathf.Abs(p.x)>10||Mathf.Abs(p.y)>10||p.scale<.001f||p.scale>20||p.width<.001f||p.width>20||p.height<.001f||p.height>20||p.opacity<0||p.opacity>1)throw new Exception("Invalid composition transform");}
 }

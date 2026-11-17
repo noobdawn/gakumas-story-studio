@@ -49,6 +49,14 @@ public static class CreatorDedicatedEffectsTests {
    thought.parameters.darkness=0;Check(sample(new[]{thought},2).All(v=>Mathf.Abs(v.r-.25f)<.001f),"thought zero darkness unchanged");thought.parameters.darkness=.65f;
    var combined=sample(new[]{memory,thought},2);Check(combined.All(v=>Mathf.Abs(v.r-v.g)<.001f&&Mathf.Abs(v.g-v.b)<.001f)&&combined[edge].r<combined[center].r,"recall and thought stack");
    foreach(var change in new Action<CreatorEffectLayer>[] {l=>l.parameters.softness=0,l=>l.parameters.darkness=2,l=>l.parameters.radius=float.NaN}){var bad=Layer("thought");bad.parameters.radius=.35f;bad.parameters.softness=.55f;bad.parameters.darkness=.65f;change(bad);bool rejected=false;try{CreatorPostEffects.ValidateLayers(new[]{bad});}catch{rejected=true;}Check(rejected,"invalid thought parameters rejected "+checks.Count);}
+   // Full-canvas transforms and localized effect mixing use real GPU pixels.
+   texture.SetPixels(Enumerable.Repeat(new Color(1,0,0,.4f),input.Length).ToArray());texture.Apply();
+   var placed=Pixels(fx.TransformLayer(texture,new CreatorCompositionLayout{x=.25f,width=.5f,height=.5f,opacity=.5f},96,64));
+   Check(placed[32*96+72].r>.99f&&Mathf.Abs(placed[32*96+72].a-.2f)<.001f,"composition scale position and fractional opacity");
+   Check(placed[32*96+12].a==0&&placed[5*96+72].a==0,"composition transparent outside resized bounds");
+   memory.parameters.tone=1;memory.parameters.bloom=0;memory.layout=new CreatorCompositionLayout{x=.25f,width=.5f,opacity=.5f};
+   var regional=sample(new[]{memory},2);Check(regional[32*96+12].r>.99f&&regional[32*96+12].g<.001f,"effect region preserves outside");
+   Check(regional[32*96+72].r<.9f&&regional[32*96+72].g>.01f&&Mathf.Abs(regional[32*96+72].a-.4f)<.001f,"effect region opacity blends inside");memory.layout=null;
    // Category actor effects must composite the displaced mask, not the old mask.
    var composite=new Material(shader);var tiny=new List<Texture2D>();Func<Color,Texture2D> solid=color=>{var tx=new Texture2D(1,1,TextureFormat.RGBAFloat,false,true);tx.SetPixel(0,0,color);tx.Apply();tiny.Add(tx);return tx;};var result=new RenderTexture(4,4,0,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear);result.Create();
    try{composite.SetTexture("_Clean",solid(new Color(0,.25f,0,1)));composite.SetTexture("_Background",solid(new Color(0,.25f,0,1)));composite.SetTexture("_Black",solid(Color.black));composite.SetTexture("_White",solid(new Color(.5f,.5f,.5f,1)));composite.SetTexture("_Actors",solid(new Color(1,0,0,0)));GL.sRGBWrite=false;Graphics.Blit(solid(new Color(.5f,.125f,0,1)),result,composite,3);Check(Pixels(result).All(v=>Mathf.Abs(v.r)<.001f&&Mathf.Abs(v.g-.25f)<.001f),"actor category composites displaced alpha");}
@@ -56,7 +64,16 @@ public static class CreatorDedicatedEffectsTests {
    // Exercise the actual RenderStory wrapper, including a throw after Blank/Blit.
    var go=new GameObject("RenderStory isolated test");var player=go.AddComponent<CreatorPrototypePlayer>();var flags=BindingFlags.NonPublic|BindingFlags.Instance;var type=typeof(CreatorPrototypePlayer);
    type.GetField("body",flags).SetValue(player,go);player.enabled=false;type.GetField("storyEffects",flags).SetValue(player,fx);var render=type.GetMethod("RenderStory",flags);var target=new RenderTexture(8,8,0);target.Create();
-   try{foreach(bool bound in new[]{false,true})foreach(bool srgb in new[]{false,true})foreach(int mode in new[]{0,1,2}){
+   try{
+    var red=new Texture2D(4,4,TextureFormat.RGBA32,false);var blue=new Texture2D(4,4,TextureFormat.RGBA32,false);
+    red.SetPixels(Enumerable.Repeat(Color.red,16).ToArray());red.Apply();blue.SetPixels(Enumerable.Repeat(Color.blue,16).ToArray());blue.Apply();
+    try{var redNode=new CreatorCompositionNode{kind="codeUI",id="red",png=Convert.ToBase64String(red.EncodeToPNG())};var blueNode=new CreatorCompositionNode{kind="codeUI",id="blue",png=Convert.ToBase64String(blue.EncodeToPNG()),layout=new CreatorCompositionLayout{width=.5f,height=.5f,opacity=.5f}};
+     var cs=new CreatorCompositionState{version=1,time=0,nodes=new[]{redNode,blueNode}};type.GetMethod("SetCodeImages",flags).Invoke(player,new object[]{cs});type.GetField("composition",flags).SetValue(player,cs);
+     var pix=Pixels((Texture)render.Invoke(player,new object[]{96,64}));Check(Mathf.Abs(pix[32*96+48].r-.5f)<.002f&&Mathf.Abs(pix[32*96+48].b-.5f)<.002f&&pix[0].r>.99f,"code UI ordered alpha composite and resize");
+     cs.nodes=new[]{blueNode,redNode};pix=Pixels((Texture)render.Invoke(player,new object[]{96,64}));Check(pix[32*96+48].r>.99f&&pix[32*96+48].b<.001f,"code UI reverse order occlusion");
+     type.GetMethod("SetCodeImages",flags).Invoke(player,new object[]{null});
+    }finally{UnityEngine.Object.DestroyImmediate(red);UnityEngine.Object.DestroyImmediate(blue);}
+    foreach(bool bound in new[]{false,true})foreach(bool srgb in new[]{false,true})foreach(int mode in new[]{0,1,2}){
     var nodes=mode==0?Array.Empty<CreatorCompositionNode>():mode==1?new[]{new CreatorCompositionNode{kind="effect",effects=new[]{memory}}}:new CreatorCompositionNode[]{new CreatorCompositionNode{kind="effect",effects=new[]{memory}},null};
     type.GetField("composition",flags).SetValue(player,new CreatorCompositionState{version=1,time=2,nodes=nodes});RenderTexture.active=bound?target:null;GL.sRGBWrite=srgb;bool threw=false;
     try{render.Invoke(player,new object[]{8,8});}catch(TargetInvocationException){threw=true;}

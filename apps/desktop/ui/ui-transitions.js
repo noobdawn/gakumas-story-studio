@@ -14,7 +14,7 @@
   }
   function plan(state,entries,scenes){
     const result=[];
-    for(const [order,t] of state.tracks.entries())if(t.type==='ui'&&t.enabled!==false)for(const c of t.clips){
+    for(const [order,t] of state.tracks.entries())if(t.type==='ui'&&t.enabled!==false)for(const c of t.clips){if(c.uiKind==='code')continue;
       const asset=entries.find(a=>a.id===c.assetId);
       if(c.uiKind!=='transition'||!asset)throw Error('UI / 转场素材不可用：'+c.name+'；请准备素材或禁用该轨道');
       if(c.targetSceneId&&!scenes.some(a=>a.sceneId===c.targetSceneId))throw Error('转场目标场景不可用：'+c.targetSceneId);

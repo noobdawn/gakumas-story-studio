@@ -10,7 +10,7 @@
       const room=capacity-(enqueued-received);
       if(!pending.length&&enqueued<total&&room>0){
         for(let i=0;i<Math.min(4,room,total-enqueued);i++){
-          const row=makeFrame(enqueued+i);
+          const row=await makeFrame(enqueued+i);
           // Snapshot ownership ends here; later timeline evaluations cannot mutate it.
           const frame=JSON.parse(JSON.stringify(row));
           if(bytes({queueSession:session,frames:[frame]})>512*1024)throw Error('单帧演出状态过大');

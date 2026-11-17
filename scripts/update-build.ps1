@@ -64,6 +64,9 @@ try {
  New-Item -ItemType Directory -Path $env:GSS_UI_CHECK_TEMP | Out-Null
  $uiCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$harness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'ui-check.log') -RedirectStandardError (Join-Path $reportPath 'ui-check-error.log')
  if($uiCheck.ExitCode){throw 'Headless UI layout checks failed'}
+ $codeHarness=Join-Path $repoRoot 'apps/desktop/electron/tests/code-ui-check.cjs'
+ $codeCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$codeHarness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'code-ui-check.log') -RedirectStandardError (Join-Path $reportPath 'code-ui-check-error.log')
+ if($codeCheck.ExitCode){throw 'Code UI rendering checks failed'}
  $pickerHarness=Join-Path $repoRoot 'apps/desktop/electron/tests/color-picker-check.cjs'
  $pickerCheck=Start-Process -FilePath $electron -ArgumentList ('"'+$pickerHarness+'"') -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $reportPath 'color-picker-check.log') -RedirectStandardError (Join-Path $reportPath 'color-picker-check-error.log')
  if($pickerCheck.ExitCode){throw 'Headless color picker checks failed'}

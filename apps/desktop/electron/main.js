@@ -53,6 +53,10 @@ ipcMain.on('control:close',event=>{try{checkSender(event);}catch{return;}if(!con
 function dispatchControl(command,args){if(!rendererReady||!win||win.isDestroyed())return Promise.reject(Error('工作台尚未就绪'));return new Promise((resolve,reject)=>{const seq=++controlSeq;const timer=setTimeout(()=>{controlPending.delete(seq);reject(Error('命令超时，执行结果未知'));},(command==='video.export'||command==='video.benchmark'&&args?.fullProject===true)?1800000:300000);controlPending.set(seq,{resolve,reject,timer});win.webContents.send('control:command',seq,command,args);});}
 
 
+let codeUIRenderer;
+ipcMain.handle('code-ui:render',(event,args)=>{checkSender(event);codeUIRenderer??=require('./code-ui-renderer').create();return codeUIRenderer.render(args);});
+app.on('before-quit',()=>codeUIRenderer?.close());
+
 function checkSender(event) {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== sessionUrl)
     throw new Error('不允许的工程操作来源');

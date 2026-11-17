@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 [Serializable] public class CreatorEffectParameters {public float tone,bloom,threshold,radius,softness,darkness,edgeProtection,lineJitter,bandStrength,bandWidth,rollSpeed,chromaOffset,signalNoise;}
-[Serializable] public class CreatorEffectLayer {public int effectVersion;public string effectType;public CreatorEffectParameters parameters;public float weight,strength;public int seed;}
+[Serializable] public class CreatorEffectLayer {public int effectVersion;public string effectType;public CreatorEffectParameters parameters;public float weight,strength;public int seed;public CreatorCompositionLayout layout;}
 [Serializable] public class CreatorEffectTarget {public string target;public CreatorEffectLayer[] layers;}
 [Serializable] public class CreatorEffectState {public bool enabled,serial;public float time;public CreatorEffectTarget[] targets;}
 
@@ -24,7 +24,7 @@ public sealed class CreatorPostEffects:IDisposable {
  CreatorEffectLayer[] Layers(string target)=>state?.targets?.FirstOrDefault(t=>t.target==target)?.layers??Array.Empty<CreatorEffectLayer>();
  static bool Range(float v,float min,float max)=>!float.IsNaN(v)&&!float.IsInfinity(v)&&v>=min&&v<=max;
  public static void ValidateLayers(CreatorEffectLayer[] layers){if(layers==null)return;if(layers.Length>32)throw new Exception("Too many composition effects");foreach(var l in layers){
-  if(l==null||l.effectVersion!=2||l.parameters==null||!Range(l.weight,0,1)||!Range(l.strength,0,1)||l.seed<0||l.seed>999999)throw new Exception("Dedicated effect v2 required");var p=l.parameters;bool valid=false;
+  if(l==null||l.effectVersion!=2||l.parameters==null||!Range(l.weight,0,1)||!Range(l.strength,0,1)||l.seed<0||l.seed>999999)throw new Exception("Dedicated effect v2 required");CreatorCompositionLayout.Validate(l.layout);var p=l.parameters;bool valid=false;
   switch(l.effectType){
    case "memory":valid=Range(p.tone,0,1)&&Range(p.bloom,0,1)&&Range(p.threshold,0,2)&&Range(p.radius,0,3);break;
    case "thought":valid=Range(p.radius,0,1)&&Range(p.softness,.01f,1)&&Range(p.darkness,0,1);break;
@@ -35,6 +35,12 @@ public sealed class CreatorPostEffects:IDisposable {
  public RenderTexture Blank(int w,int h){var r=Make(w,h);var old=RenderTexture.active;try{RenderTexture.active=r;GL.Clear(false,true,Color.black);}finally{RenderTexture.active=old;}return r;}
  public RenderTexture Copy(Texture t,int w,int h){var r=Make(w,h);Graphics.Blit(t,r);return r;}
  public void Composite(RenderTexture output,Texture source){if(source)Graphics.Blit(source,output,material,1);}
+ public Texture TransformLayer(Texture source,CreatorCompositionLayout p,int w,int h){
+  if(p==null)return source;CreatorCompositionLayout.Validate(p);
+  if(p.x==0&&p.y==0&&p.scale==1&&p.width==1&&p.height==1&&p.opacity==1)return source;
+  SetLayout(p);var result=Make(w,h);Graphics.Blit(source,result,material,8);return result;
+ }
+ void SetLayout(CreatorCompositionLayout p){p=p??new CreatorCompositionLayout();material.SetVector("_Layout",new Vector4(p.x,p.y,p.scale*p.width,p.scale*p.height));material.SetFloat("_LayoutOpacity",p.opacity);}
  public Texture Transition(Texture left,Texture right,string kind,float progress,int w,int h){var result=Make(w,h);material.SetTexture("_Right",right);material.SetFloat("_Progress",progress);material.SetFloat("_TransitionKind",kind=="black"?1:kind=="wipe"?2:0);Graphics.Blit(left,result,material,4);return result;}
  public Texture Apply(Texture clean,string target,int w,int h)=>ApplyLayers(clean,Layers(target),w,h,state?.serial==true);
  public Texture ApplyLayers(Texture clean,CreatorEffectLayer[] layers,int w,int h,bool serial=true){
@@ -42,7 +48,7 @@ public sealed class CreatorPostEffects:IDisposable {
   foreach(var l in layers??Array.Empty<CreatorEffectLayer>()){
    if(l.weight<=0||l.strength<=0)continue;
    var next=Make(w,h);material.SetTexture("_Clean",serial?lower:clean);material.SetTexture("_Lower",lower);material.SetFloat("_Weight",l.weight);material.SetFloat("_Strength",l.strength);material.SetFloat("_Seed",l.seed);material.SetFloat("_StoryTime",state?.time??0);
-   var p=l.parameters;int pass;
+   SetLayout(l.layout);var p=l.parameters;int pass;
    switch(l.effectType){
     case "memory":pass=0;material.SetVector("_EffectParams",new Vector4(p.tone,p.bloom,p.threshold,p.radius));break;
     case "thought":pass=7;material.SetVector("_EffectParams",new Vector4(p.radius,p.softness,p.darkness,0));break;

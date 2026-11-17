@@ -6,11 +6,14 @@ Shader "Hidden/Creator/StoryEffects" {
  sampler2D _MainTex,_Clean,_Lower,_Background,_Actors,_Black,_White,_Right;
  float4 _MainTex_TexelSize,_Params,_TextureParams;
  float _Strength,_Weight,_Seed,_StoryTime,_Progress,_TransitionKind;
- float4 _EffectParams,_EffectParams2;
+ float4 _EffectParams,_EffectParams2,_Layout;float _LayoutOpacity;
+ float2 layoutUV(float2 uv){return (uv-.5-_Layout.xy)/max(_Layout.zw,.000001)+.5;}
+ float layoutMask(float2 uv){float2 p=layoutUV(uv);return step(0,p.x)*step(p.x,1)*step(0,p.y)*step(p.y,1)*_LayoutOpacity;}
+ float4 layoutLayer(v2f_img i):SV_Target {float2 uv=layoutUV(i.uv);float4 c=tex2D(_MainTex,uv);c.a*=layoutMask(i.uv);return c;}
  // Intermediate textures are straight-alpha, linear ARGBHalf. Interpolation
  // across displaced coverage is premultiplied, then converted back to straight.
  float4 alphaMix(float4 a,float4 b,float w){float alpha=lerp(a.a,b.a,w);return float4(lerp(a.rgb*a.a,b.rgb*b.a,w)/max(alpha,.00001),alpha);}
- float4 effectMix(float2 uv,float4 processed){float4 src=tex2D(_Clean,uv);return alphaMix(tex2D(_Lower,uv),alphaMix(src,processed,_Strength),_Weight);}
+ float4 effectMix(float2 uv,float4 processed){float4 src=tex2D(_Clean,uv);return alphaMix(tex2D(_Lower,uv),alphaMix(src,processed,_Strength),_Weight*layoutMask(uv));}
  #include "CreatorMemory.cginc"
  #include "CreatorThought.cginc"
  #include "CreatorTelevision.cginc"
@@ -64,5 +67,9 @@ Shader "Hidden/Creator/StoryEffects" {
  #pragma fragment thoughtEffect
  ENDCG}
 
+ Pass {CGPROGRAM
+ #pragma vertex vert_img
+ #pragma fragment layoutLayer
+ ENDCG}
  }
 }
