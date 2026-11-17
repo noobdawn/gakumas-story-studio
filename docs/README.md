@@ -13,6 +13,7 @@ GSS 当前是 Windows 开发预览版。源码、程序下载包与用户数据�
 - [模块与运行数据](developer/architecture.md)：Electron、Python、Unity 的分工，界面布局及任务进度。
 - [单 build 工作流](developer/local-builds.md)：更新唯一测试版本与保留三个本地源码回退点。
 - [验证记录](developer/validation.md)：已执行检查、设备缩放模拟和待完成的真机验收。
+- [GPU导出优化阶段总结](developer/export-performance.md)：计时、GPU出口、有界队列、全片实测和实现还原点；普通UI尚未切换。
 - [自动发布流程](developer/releases.md)：GitHub Checks、版本标签、Windows runner 与 Release 发布条件。
 - [参与开发](../CONTRIBUTING.md)、[开发约束](../AGENTS.md)、[第三方来源](../THIRD_PARTY_NOTICES.md)。
 
