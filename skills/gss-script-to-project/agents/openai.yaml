@@ -1,0 +1,4 @@
+interface:
+  display_name: "GSS 剧本生成工程"
+  short_description: "按标记剧本编排转场、游戏风格 UI、音效、角色镜头和配音，交付可编辑工程"
+  default_prompt: "使用 $gss-script-to-project，根据剧本的场次、对白和演出标记生成 GSS 工程，编排转场、游戏风格 UI、日常音效、镜头和配音，另存新版本。"
