@@ -317,6 +317,7 @@ def main():
             hair_swing=physics_root/'hair'
             if not hair_swing.is_dir(): raise RuntimeError('头发实验物理数据不可用')
             command += ['-creator-hair-swing-dir',str(hair_swing.resolve())]
+            command += ['-creator-face-swing-dir',str((physics_root/'faces-v1').resolve())]
         if faces:
             command += ['-creator-face-shapes', str(args.face_shapes.resolve())]
         if face_decals:

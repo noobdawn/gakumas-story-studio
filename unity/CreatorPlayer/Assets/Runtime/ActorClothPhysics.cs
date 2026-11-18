@@ -27,9 +27,45 @@ public sealed class ActorClothPhysics : MonoBehaviour
         public BoneData data, childData; public Transform bone, child;
         public Vector3 localPosition; public Quaternion localRotation;
         public Vector3 position, previous; public bool initialized;
+        public BodyCollider[] obstacles;
     }
-    sealed class BodyCollider { public ColliderData data; public Transform bone; }
-    public struct ContactMetrics { public int pairs, overlaps; public float maxDepth, totalDepth; }
+    sealed class BodyCollider
+    {
+        public ColliderData data;
+        public Transform bone, end;
+        public Vector3 endOffset, lateral, depthAxis;
+        public Vector3 a, b, side;
+        public float ra, rb, width;
+        public bool head, torso;
+        public void Update()
+        {
+            a = bone.TransformPoint(data.vectorA);
+            b = a;
+            if (end)
+            {
+                b = end.TransformPoint(endOffset);
+                var x = bone.TransformVector(lateral);
+                width = x.magnitude;
+                side = x.normalized;
+                ra = rb = bone.TransformVector(depthAxis).magnitude;
+                return;
+            }
+            Vector3 scale = bone.lossyScale;
+            float radialScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+            ra = Mathf.Max(0, data.radiusA * radialScale);
+            rb = Mathf.Max(0, data.radiusB * radialScale);
+            if (data.type == 1)
+            {
+                int axis = Mathf.Clamp(Mathf.RoundToInt(data.vectorB.x), 0, 2);
+                var dir = bone.TransformVector(axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : Vector3.forward);
+                var offset = dir * Mathf.Max(0, data.vectorB.y * .5f - Mathf.Max(data.radiusA, data.radiusB));
+                a -= offset;
+                b += offset;
+            }
+            else ra = rb = Mathf.Max(ra, rb);
+        }
+    }
+    public struct ContactMetrics { public int pairs, overlaps, headPairs, torsoPairs, headOverlaps, torsoOverlaps; public float maxDepth, totalDepth, headDepth, torsoDepth; }
 
     [Tooltip("JSON exported from the locally owned outfit resources.")]
     public TextAsset metadata;
@@ -55,6 +91,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
     const float StepSeconds = 1f / 60f;
     readonly List<Segment> segments = new List<Segment>();
     readonly List<BodyCollider> colliders = new List<BodyCollider>();
+    bool bindingsDirty;
     float accumulator;
     public int SegmentCount => segments.Count;
     public int ColliderCount => colliders.Count;
@@ -65,6 +102,82 @@ public sealed class ActorClothPhysics : MonoBehaviour
     {
         if(!bodySolver || bodySolver==this)throw new ArgumentException("Missing body collider source");
         colliders.AddRange(bodySolver.colliders);
+        AddTorsoCoverage(bodySolver);
+        bindingsDirty = true;
+    }
+    public void AddFaceColliders(Transform face, ColliderData[] shapes)
+    {
+        var nodes = face.GetComponentsInChildren<Transform>(true).ToDictionary(t => t.name);
+        foreach (var shape in shapes)
+        {
+            if (!nodes.TryGetValue(shape.name, out var bone)) throw new InvalidOperationException("Missing face collider: " + shape.name);
+            colliders.Add(new BodyCollider { data = shape, bone = bone, head = true });
+        }
+        bindingsDirty = true;
+    }
+
+    // Supplement only the hair groups missing an authored spine proxy. Fit the cross section
+    // in the bind pose, then follow both ends of the animated spine on this actor.
+    void AddTorsoCoverage(ActorClothPhysics body)
+    {
+        var skin = body.actorRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(s => s.name == "Geo_Body");
+        var bones = skin.bones;
+        var spineNames = new[] { "Spine", "Spine1", "Spine2", "Neck" };
+        int hairMask = segments.Aggregate(0, (mask, s) => mask | s.childData.collisionMask);
+        Mesh baked = null;
+        try
+        {
+            Vector3[] vertices = null;
+            BoneWeight[] weights = null;
+            for (int j = 0; j < spineNames.Length - 1; j++)
+            {
+                var lower = Array.Find(bones, t => t && t.name == spineNames[j]);
+                var upper = Array.Find(bones, t => t && t.name == spineNames[j + 1]);
+                if (!lower || !upper) continue;
+                int covered = body.colliders.Where(c => c.bone == lower).Aggregate(0, (mask,c) => mask | c.data.collisionMask);
+                int missing = hairMask & ~covered;
+                if (missing == 0) continue;
+                if (!baked)
+                {
+                    baked = new Mesh(); skin.BakeMesh(baked);
+                    vertices = baked.vertices; weights = skin.sharedMesh.boneWeights;
+                }
+                Vector3 axis = upper.position - lower.position;
+                if (axis.sqrMagnitude < 1e-8f) continue;
+                var lateral = Vector3.ProjectOnPlane(body.actorRoot.right, axis).normalized;
+                var forward = Vector3.Cross(lateral, axis.normalized).normalized;
+                var xs = new List<float>(); var zs = new List<float>();
+                for (int i = 0; i < weights.Length; i++)
+                {
+                    var w = weights[i];
+                    var dominant = bones[w.boneIndex0];
+                    if (dominant != lower && dominant != upper) continue;
+                    var delta = skin.transform.TransformPoint(vertices[i]) - lower.position;
+                    var t = Vector3.Dot(delta, axis) / axis.sqrMagnitude;
+                    if (t < -.15f || t > 1.15f) continue;
+                    xs.Add(Vector3.Dot(delta, lateral)); zs.Add(Vector3.Dot(delta, forward));
+                }
+                xs.Sort(); zs.Sort();
+                var left = Array.Find(bones, t => t && t.name == "LeftArm");
+                var right = Array.Find(bones, t => t && t.name == "RightArm");
+                float span = left && right ? Vector3.Distance(left.position,right.position) : 2 * axis.magnitude;
+                float x = span * .43f, z = span * .28f;
+                Vector3 offset = Vector3.zero;
+                if (xs.Count >= 12)
+                {
+                    int low = xs.Count / 25, high = xs.Count - 1 - low;
+                    offset = lateral * ((xs[low] + xs[high]) * .5f) + forward * ((zs[low] + zs[high]) * .5f);
+                    x = Mathf.Clamp((xs[high] - xs[low]) * .5f, span * .24f, span * .55f);
+                    z = Mathf.Clamp((zs[high] - zs[low]) * .5f, span * .17f, span * .36f);
+                }
+                colliders.Add(new BodyCollider {
+                    data = new ColliderData { name=lower.name, collisionMask=missing, vectorA=lower.InverseTransformVector(offset) },
+                    bone=lower, end=upper, endOffset=upper.InverseTransformVector(offset),
+                    lateral=lower.InverseTransformVector(lateral*x), depthAxis=lower.InverseTransformVector(forward*z), torso=true
+                });
+            }
+        }
+        finally { if (baked) Destroy(baked); }
     }
     public string DebugFirstBackStep { get; private set; }
     public Vector3[] GetTipPositions() => segments.Select(s=>s.child.position).ToArray();
@@ -72,7 +185,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
     public void Configure(Transform root, Data data)
     {
         if (!root || data?.dynamic == null || data.@static == null) throw new ArgumentException("Missing actor or swing metadata");
-        actorRoot=root;segments.Clear();colliders.Clear();accumulator=0;
+        actorRoot=root;segments.Clear();colliders.Clear();accumulator=0;bindingsDirty=true;
         var transforms=root.GetComponentsInChildren<Transform>(true);
         if(transforms.GroupBy(t=>t.name).Any(g=>g.Count()>1)) throw new InvalidOperationException("Duplicate actor bone names");
         var byName=transforms.ToDictionary(t=>t.name);
@@ -89,7 +202,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
                                       localPosition=bone.localPosition,localRotation=bone.localRotation});
         }
         foreach(var spec in data.@static)
-            if(byName.TryGetValue(spec.name,out var bone)) colliders.Add(new BodyCollider {data=spec,bone=bone});
+            if(byName.TryGetValue(spec.name,out var bone)) colliders.Add(new BodyCollider {data=spec,bone=bone,torso=spec.name.StartsWith("Spine",StringComparison.Ordinal)});
         ResetSimulation();
     }
     public void ResetSimulation()
@@ -101,6 +214,20 @@ public sealed class ActorClothPhysics : MonoBehaviour
     public void Step(float dt)
     {
         if(Mathf.Abs(dt-StepSeconds)>.00001f)throw new ArgumentOutOfRangeException(nameof(dt),"Use a fixed 1/60 second step");
+        Solve(dt, true);
+    }
+    public void ApplyCurrentPose() => Solve(0f, false);
+    void PrepareColliders()
+    {
+        foreach (var c in colliders) c.Update();
+        if (!bindingsDirty) return;
+        foreach (var s in segments)
+            s.obstacles = colliders.Where(c => (s.childData.collisionMask & c.data.collisionMask) != 0).ToArray();
+        bindingsDirty = false;
+    }
+    void Solve(float dt, bool advance)
+    {
+        PrepareColliders();
         foreach(var s in segments){s.bone.localPosition=s.localPosition;s.bone.localRotation=s.localRotation;}
         foreach(var s in segments)
         {
@@ -111,20 +238,16 @@ public sealed class ActorClothPhysics : MonoBehaviour
             if(!s.initialized){s.position=restTip;s.previous=restTip;s.initialized=true;}
             var old=s.position;
             var damping=Mathf.Clamp01(s.data.damping);
-            var velocity=(s.position-s.previous)*(1f-damping);
+            var velocity=advance?(s.position-s.previous)*(1f-damping):Vector3.zero;
             var point=s.position+velocity+Physics.gravity*(gravityScale*dt*dt);
             var stiffness=Mathf.Clamp(s.data.stiffness,0f,.3f);
             point=Vector3.Lerp(point,restTip,stiffness);
-            var radius=Mathf.Clamp(s.childData.radiusA*collisionRadiusScale,0f,.04f);
+            var radius=TipRadius(s);
             for(int iteration=0;iteration<constraintIterations;iteration++)
             {
                 var direction=point-origin;if(direction.sqrMagnitude<1e-12f)direction=restDirection;
                 point=origin+direction.normalized*length;
-                foreach(var c in colliders)
-                {
-                    if((s.childData.collisionMask & c.data.collisionMask)==0)continue;
-                    point=ResolveCollision(point,radius,c);
-                }
+                foreach(var c in s.obstacles) point=ResolveCollision(point,radius,c);
                 if(separateClothingLayers && s.data.name.Contains("Jacket"))point=ResolveLayer(point,s);
                 if(experimentalHandCollisions && s.data.name.Contains("Jacket"))
                     foreach(var c in colliders)
@@ -135,15 +258,40 @@ public sealed class ActorClothPhysics : MonoBehaviour
             float angleLimit=skirtMaxAngle>=0f&&s.data.name.Contains("Skirt")?skirtMaxAngle:maxAngle;
             var desired=Vector3.RotateTowards(restDirection,directionFinal.normalized*length,angleLimit*Mathf.Deg2Rad,0);
             if(refineContacts && s.data.name.Contains("Skirt"))desired=RefineDirection(s,origin,restDirection,desired,length,radius,angleLimit);
+            // Contact is evaluated after the swing cone. Rotate on the fixed-length sphere
+            // so restoring bone length cannot put the tip back inside the collider.
+            for(int pass=0;pass<2;pass++)
+                foreach(var c in s.obstacles)
+                {
+                    desired=RotateOutside(origin,desired,restDirection,.5f,radius*.75f,c);
+                    desired=RotateOutside(origin,desired,restDirection,1f,radius,c);
+                }
             var rotation=Quaternion.FromToRotation(restDirection,desired);
             if(firstStep && s.data.name=="RightBackJacket1_S")DebugFirstBackStep=$"origin={origin.ToString("F8")} rest={restTip.ToString("F8")} point={point.ToString("F8")} desired={desired.ToString("F8")} angle={Quaternion.Angle(Quaternion.identity,rotation):F8}";
             s.bone.rotation=rotation*s.bone.rotation;
-            s.previous=old;s.position=s.child.position;
+            if(advance){s.previous=old;s.position=s.child.position;}
         }
-        if(surfaceCollision){
-            var oldTips=segments.Select(x=>x.child.position).ToArray();surfaceCollision.Step();
-            for(int i=0;i<segments.Count;i++){var delta=segments[i].child.position-oldTips[i];segments[i].position+=delta;segments[i].previous+=delta;}
-        }
+    }
+    float TipRadius(Segment s) => Mathf.Clamp(s.childData.radiusA*collisionRadiusScale,0f,.04f) * Mathf.Abs(actorRoot.lossyScale.x);
+    static Vector3 RotateOutside(Vector3 origin,Vector3 direction,Vector3 rest,float fraction,float radius,BodyCollider c)
+    {
+        var p=origin+direction*fraction;
+        ClosestCollision(p,radius,c,out var center,out float clearance);
+        if((p-center).sqrMagnitude>=clearance*clearance) return direction;
+        var toward=center-origin;
+        float d=toward.magnitude, length=direction.magnitude, lever=length*fraction;
+        if(d<1e-6f || lever<1e-6f) return direction;
+        var axis=toward/d;
+        float cosine=(lever*lever+d*d-clearance*clearance)/(2f*lever*d);
+        // A pinned root inside the shape can have no feasible direction. Keep its authored
+        // orientation instead of flipping the entire strand to satisfy an impossible contact.
+        if(cosine<=-1f) return direction;
+        var tangent=Vector3.ProjectOnPlane(direction,axis);
+        if(tangent.sqrMagnitude<1e-10f)tangent=Vector3.ProjectOnPlane(rest,axis);
+        if(tangent.sqrMagnitude<1e-10f)return direction;
+        cosine=Mathf.Clamp(cosine,-1,1);
+        var outside=(axis*cosine+tangent.normalized*Mathf.Sqrt(1-cosine*cosine))*length;
+        return Vector3.RotateTowards(rest,outside,65f*Mathf.Deg2Rad,0);
     }
     Vector3 RefineDirection(Segment segment,Vector3 origin,Vector3 rest,Vector3 original,float length,float radius,float angleLimit)
     {
@@ -203,28 +351,30 @@ public sealed class ActorClothPhysics : MonoBehaviour
     }
     static void ClosestCollision(Vector3 point,float radius,BodyCollider col,out Vector3 closest,out float minimum)
     {
-        var d=col.data;var center=col.bone.TransformPoint(d.vectorA);closest=center;float bodyRadius=Mathf.Max(d.radiusA,d.radiusB);
-        if(d.type==1)
+        var ab=col.b-col.a;
+        float t=ab.sqrMagnitude>1e-10f?Mathf.Clamp01(Vector3.Dot(point-col.a,ab)/ab.sqrMagnitude):.5f;
+        closest=col.a+ab*t;
+        float bodyRadius=Mathf.Lerp(col.ra,col.rb,t);
+        if(col.width>1e-6f)
         {
-            int axis=Mathf.Clamp(Mathf.RoundToInt(d.vectorB.x),0,2);
-            Vector3 dir=col.bone.TransformDirection(axis==0?Vector3.right:axis==1?Vector3.up:Vector3.forward).normalized;
-            float half=Mathf.Max(0,d.vectorB.y*.5f-bodyRadius);
-            float x=Mathf.Clamp(Vector3.Dot(point-center,dir),-half,half);closest=center+dir*x;
-            float blend=half>1e-5f?(x+half)/(2*half):.5f;bodyRadius=Mathf.Lerp(d.radiusA,d.radiusB,blend);
+            var delta=point-closest;var stretched=delta+col.side*(Vector3.Dot(delta,col.side)*(bodyRadius/col.width-1));
+            if(stretched.sqrMagnitude>1e-12f)bodyRadius*=delta.magnitude/stretched.magnitude;
         }
         minimum=bodyRadius+radius;
     }
     public ContactMetrics MeasureContacts()
     {
+        PrepareColliders();
         var result=new ContactMetrics();
         foreach(var s in segments)
         {
-            var point=s.child.position;var radius=Mathf.Clamp(s.childData.radiusA*collisionRadiusScale,0f,.04f);
-            foreach(var c in colliders)
+            var point=s.child.position;var radius=TipRadius(s);
+            foreach(var c in s.obstacles)
             {
-                if((s.childData.collisionMask & c.data.collisionMask)==0)continue;
                 ClosestCollision(point,radius,c,out var closest,out var minimum);result.pairs++;
                 var depth=minimum-Vector3.Distance(point,closest);
+                if(c.head){result.headPairs++;if(depth>1e-5f){result.headOverlaps++;result.headDepth=Mathf.Max(result.headDepth,depth);}}
+                if(c.torso){result.torsoPairs++;if(depth>1e-5f){result.torsoOverlaps++;result.torsoDepth=Mathf.Max(result.torsoDepth,depth);}}
                 if(depth>0){result.overlaps++;result.totalDepth+=depth;result.maxDepth=Mathf.Max(result.maxDepth,depth);}
             }
         }
