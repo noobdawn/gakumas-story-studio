@@ -9,9 +9,11 @@ using UnityEngine.Video;
 [Serializable] public class CreatorMediaDraw {public string id,file,kind;public float[] points,uv,color,pivot;public double time,fps;public int width,height;public long frameCount;}
 
 public sealed class CreatorScreenMedia:IDisposable {
+ static readonly bool TraceFrames=Environment.GetEnvironmentVariable("CREATOR_TEST_INSTANCE")=="1"&&Environment.GetEnvironmentVariable("CREATOR_MEDIA_TRACE")=="1";
+ static void Trace(Item item,string phase){if(TraceFrames)Debug.Log($"ScreenMedia {phase} wanted={item.wanted} rendered={item.rendered} actual={item.video.frame} playing={item.video.isPlaying}");}
  [Serializable] public class EditEvent {public string id,phase;public float dx,dy,scale=1;}
  sealed class Item:IDisposable {
-  public string file,error;public Texture2D image;public VideoPlayer video;public RenderTexture target;public long rendered=-1,wanted=-1;public bool requested;
+  public double fps;public string file,error;public Texture2D image;public VideoPlayer video;public RenderTexture target;public long rendered=-1,wanted=-1;public bool requested;
   public Texture Texture=>image?(Texture)image:target;
   public void Dispose(){if(video){video.Stop();UnityEngine.Object.Destroy(video.gameObject);}if(target){target.Release();UnityEngine.Object.Destroy(target);}if(image)UnityEngine.Object.Destroy(image);}
  }
@@ -29,21 +31,27 @@ public sealed class CreatorScreenMedia:IDisposable {
   foreach(var key in items.Keys.Where(x=>!ids.Contains(x)).ToArray()){items[key].Dispose();items.Remove(key);}
   foreach(var d in value){string file=FilePath(d);if(items.TryGetValue(d.id,out var old)&&old.file!=file){old.Dispose();items.Remove(d.id);}
    if(!items.TryGetValue(d.id,out var item)){item=new Item{file=file};items.Add(d.id,item);if(d.kind=="image"){if(new FileInfo(file).Length>100*1024*1024)throw new Exception("Image exceeds 100 MB");item.image=new Texture2D(2,2,TextureFormat.RGBA32,false,true);if(!item.image.LoadImage(File.ReadAllBytes(file)))throw new Exception("Image decode failed");item.image.wrapMode=TextureWrapMode.Clamp;item.image.filterMode=FilterMode.Bilinear;}
-    else{var go=new GameObject("Screen video "+d.id);go.transform.SetParent(parent,false);var video=go.AddComponent<VideoPlayer>();item.video=video;item.target=new RenderTexture(d.width,d.height,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.sRGB);item.target.wrapMode=TextureWrapMode.Clamp;item.target.filterMode=FilterMode.Bilinear;item.target.Create();video.playOnAwake=false;video.source=VideoSource.Url;video.url=new Uri(file).AbsoluteUri;video.audioOutputMode=VideoAudioOutputMode.None;video.renderMode=VideoRenderMode.RenderTexture;video.targetTexture=item.target;video.aspectRatio=VideoAspectRatio.NoScaling;video.skipOnDrop=false;video.waitForFirstFrame=true;video.isLooping=false;video.sendFrameReadyEvents=true;var captured=item;video.errorReceived+=(v,message)=>captured.error=message;video.frameReady+=(v,frame)=>{captured.rendered=frame;if(frame>=captured.wanted)v.Pause();};video.Prepare();}
+    else{var go=new GameObject("Screen video "+d.id);go.transform.SetParent(parent,false);var video=go.AddComponent<VideoPlayer>();item.video=video;item.target=new RenderTexture(d.width,d.height,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.sRGB);item.target.wrapMode=TextureWrapMode.Clamp;item.target.filterMode=FilterMode.Bilinear;item.target.Create();video.playOnAwake=false;video.source=VideoSource.Url;video.url=new Uri(file).AbsoluteUri;video.audioOutputMode=VideoAudioOutputMode.None;video.renderMode=VideoRenderMode.RenderTexture;video.targetTexture=item.target;video.aspectRatio=VideoAspectRatio.NoScaling;video.skipOnDrop=false;video.waitForFirstFrame=true;video.isLooping=false;video.sendFrameReadyEvents=true;var captured=item;video.errorReceived+=(v,message)=>captured.error=message;video.frameReady+=(v,frame)=>{captured.rendered=frame;Trace(captured,"frame-ready");};video.seekCompleted+=v=>Trace(captured,"seek-complete");video.Prepare();}
    }
-   if(item.video){long frame=Math.Max(0,Math.Min(d.frameCount-1,(long)Math.Floor(d.time*d.fps+0.0001)));if(item.wanted!=frame){item.wanted=frame;item.requested=false;}}
+   if(item.video){item.fps=d.fps;long frame=Math.Max(0,Math.Min(d.frameCount-1,(long)Math.Floor(d.time*d.fps+0.0001)));if(item.wanted!=frame){item.wanted=frame;item.requested=false;}}
   }
   draws=value;
  }
+ void ResetRequests(){foreach(var item in items.Values)if(item.video){Trace(item,"failed");item.video.Pause();item.requested=false;}}
  public IEnumerator Apply(CreatorMediaDraw[] value){
   try{Begin(value);}catch(Exception e){Error=e.Message;yield break;}
   float until=Time.realtimeSinceStartup+45;
-  while(true){bool ready=true;foreach(var item in items.Values){if(item.error!=null){Error="视频解码失败："+item.error;yield break;}if(!item.video)continue;var v=item.video;if(!v.isPrepared){ready=false;continue;}
+  while(true){bool ready=true;foreach(var item in items.Values){if(item.error!=null){Error="视频解码失败："+item.error;ResetRequests();yield break;}if(!item.video)continue;var v=item.video;if(!v.isPrepared){ready=false;continue;}
     if(v.frameCount>0)item.wanted=Math.Min(item.wanted,(long)v.frameCount-1);
     if(item.rendered==item.wanted){v.Pause();continue;}
-    ready=false;if(!item.requested){try{item.requested=true;if(v.canStep&&item.rendered>=0&&item.wanted==item.rendered+1)v.StepForward();else{v.frame=item.wanted;v.Play();}}catch(Exception e){item.error=e.Message;}}
+    ready=false;if(!item.requested){try{
+     // Keep the decoder paused while seeking. Play/StepForward can deliver a later
+     // frame on Windows, leaving an exact-frame waiter stuck after Pause().
+     // Seek inside the frame, away from timestamp rounding at its leading edge.
+     item.requested=true;v.Pause();Trace(item,"seek");v.time=(item.wanted+.5)/item.fps;
+    }catch(Exception e){item.error=e.Message;}}
    }
-   if(ready)break;if(Time.realtimeSinceStartup>until){foreach(var item in items.Values)if(item.video)item.video.Pause();Error="视频帧读取超时，请重新准备素材或缩短视频";yield break;}yield return null;
+   if(ready)break;if(Time.realtimeSinceStartup>until){ResetRequests();Error="视频帧读取超时，请重试播放；若仍失败，请检查视频解码日志";yield break;}yield return null;
   }
   // frameReady signals the decoded frame; wait until the texture upload has completed.
   if(items.Values.Any(i=>i.video))yield return new WaitForEndOfFrame();

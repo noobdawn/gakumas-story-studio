@@ -1206,7 +1206,7 @@
       const elapsed=state.current-clip.start,remaining=clip.start+clip.len-state.current,fadeIn=clip.fadeIn||0,fadeOut=clip.fadeOut||0;entry.gain.gain.setValueAtTime(Math.max(0,Math.min(1,(clip.volume??1)*(fadeIn?Math.min(1,elapsed/fadeIn):1)*(fadeOut?Math.min(1,remaining/fadeOut):1))),context.currentTime);
     }
   }
-  function mediaUrl(asset){if(asset?.effectUrl)return asset.effectUrl;if(!asset?.scope||!['音乐','音效','音源'].includes(asset.type))throw Error('音频素材不可用');const folder=asset.scope==='project'?asset.projectId:'shared';return '/'+location.pathname.split('/')[1]+'/media/'+asset.scope+'/'+folder+'/'+asset.id+asset.extension;}
+  function mediaUrl(asset){if(asset?.effectUrl)return asset.effectUrl;if(!asset?.scope||!(['音乐','音效','音源'].includes(asset.type)||asset.type==='视频'&&asset.visual?.kind==='video'&&asset.visual.hasAudio===true))throw Error('音频素材不可用');const folder=asset.scope==='project'?asset.projectId:'shared';return '/'+location.pathname.split('/')[1]+'/media/'+asset.scope+'/'+folder+'/'+asset.id+asset.extension;}
   const audioMetadataSession=id();let audioMetadataNonce=0;
   function readAudioDuration(asset){
     return new Promise((resolve,reject)=>{const audio=new Audio();let settled=false;const timer=setTimeout(()=>finish(new Error('读取音频时长超时')),15000);
@@ -1345,7 +1345,7 @@
   }
   $('#time-display').onclick=openTimecode;
   $('#play').onclick=()=>{commitInspectorInput();setPlaying(!playing);};$('#back-start').onclick=()=>{commitInspectorInput();state.current=0;setPlaying(false);updateClock();};
-  function tick(now){if(playing){if(uiSceneGate&&Math.abs(state.current-uiSceneGate.time)>1e-6)uiSceneGate=null;if(lastTick&&!uiSceneGate){const next=Math.min(duration,state.current+(now-lastTick)/1000);try{const audioBoundary=audioEffectsPreview.boundary(state.current,next),until=audioBoundary===null?next:audioBoundary,gate=CreatorUITransitions.nextGate(state,state.current,until,sceneAt);if(gate){uiSceneGate=gate;state.current=gate.time;}else state.current=until;}catch(error){setPlaying(false);notify(error.message);}}lastTick=now;if(state.current>=duration)setPlaying(false);updateClock();}requestAnimationFrame(tick);}requestAnimationFrame(tick);
+  function tick(now){if(playing){if(uiSceneGate&&Math.abs(state.current-uiSceneGate.time)>1e-6)uiSceneGate=null;if(lastTick&&!uiSceneGate){const next=Math.min(duration,state.current+(now-lastTick)/1000);try{const audioBoundary=audioEffectsPreview.boundary(state.current,next),until=audioBoundary===null?next:audioBoundary,gate=CreatorUITransitions.nextGate(state,state.current,until,sceneAt);if(gate){uiSceneGate=gate;state.current=gate.time;}else state.current=until;}catch(error){setPlaying(false);notify(error.message);}}lastTick=now;if(state.current>=duration)setPlaying(false);try{updateClock();}catch(error){stopForPreviewError(error.message);}}requestAnimationFrame(tick);}requestAnimationFrame(tick);
   document.addEventListener('keydown',e=>{
     if(e.isComposing)return;
     if(e.key==='Escape'&&assetContextMenu){e.preventDefault();closeAssetContextMenu();return;}
