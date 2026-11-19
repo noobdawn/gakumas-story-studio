@@ -34,7 +34,9 @@ public sealed class CreatorLinearRendering : IDisposable {
         colorAdjustments=profile.Add<ColorAdjustments>(true);colorAdjustments.postExposure.Override(0);
         Shader.SetGlobalVector("_GlobalLightParameter",Vector4.zero);Shader.SetGlobalColor("_VLEyeSpecColor",Color.black);
         foreach(var n in new[]{"_VLFogParams","_VLFogSphere","_VLFogColor","_VLFogSphereColor"})Shader.SetGlobalVector(n,Vector4.zero);
+        RenderPipelineManager.beginCameraRendering += RenderHairShadows;
     }
+    void RenderHairShadows(ScriptableRenderContext context,Camera target) => ActorHairShadow.Render(context,target,settings.shadows);
     public static void ConfigureCamera(Camera camera,CreatorRenderSettings settings=null) {
         settings=settings??new CreatorRenderSettings();settings.Validate();
         camera.allowHDR=true;camera.allowMSAA=settings.MsaaSamples>1;
@@ -130,5 +132,5 @@ public sealed class CreatorLinearRendering : IDisposable {
             Texture2D result;using(CreatorExportProfiler.Measure("rgbTextureMs")){result=new Texture2D(rt.width,rt.height,TextureFormat.RGB24,false);result.SetPixels(pixels);}using(CreatorExportProfiler.Measure("rgbApplyMs"))result.Apply();return result;
         }finally{RenderTexture.active=old;if(linear)UnityEngine.Object.Destroy(linear);}
     }
-    public void Dispose(){sceneFeature.SetActive(false);sceneFeature.ReleaseTargets();if(volume)UnityEngine.Object.Destroy(volume.gameObject);if(profile)UnityEngine.Object.Destroy(profile);}
+    public void Dispose(){RenderPipelineManager.beginCameraRendering-=RenderHairShadows;sceneFeature.SetActive(false);sceneFeature.ReleaseTargets();if(volume)UnityEngine.Object.Destroy(volume.gameObject);if(profile)UnityEngine.Object.Destroy(profile);}
 }
