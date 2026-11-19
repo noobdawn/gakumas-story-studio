@@ -107,6 +107,13 @@ def main():
     except (OSError, ValueError, KeyError, TypeError) as exc:
         parser.error('解包资源不可用：' + str(exc))
     view = args.catalog_root / 'player-view'
+    from game_alias_catalog import editor_rows
+    try:
+        game_alias_rows=editor_rows(args.catalog_root)
+    except (OSError,ValueError,KeyError,TypeError) as error:
+        print('游戏资源别名表未载入：'+str(error),file=sys.stderr)
+        game_alias_rows={}
+    alias_script=(runtime_paths.UI/'game-asset-aliases.js').read_bytes()+b'\nglobalThis.CreatorGameAliasRows='+json.dumps(game_alias_rows,ensure_ascii=False,separators=(',',':')).encode('utf8')+b';'
     bundles = view / 'characters'
     args.motion = cache_motions['shy']
     args.cloth = view / 'baseline-cloth.json'
@@ -486,9 +493,11 @@ def main():
                     prefix = '/' + token + '/ui/'
                     if not self.path.startswith(prefix): return self.send_error(404)
                     name = self.path[len(prefix):].split('?', 1)[0] or 'index.html'
-                    if name not in ('story-timeline.js', 'story-editor.js', 'story-voice.js', 'notifications.js', 'export-queue.js', 'post-effects.js', 'post-effects-editor.js', 'settings-file-links.js','color-inputs.js','character-colors.js','character-color-editor.js','code-ui.js', 'composition.js', 'composition-editor.js', 'audio-effects-preview.js', 'panel-selection.js', 'project-removal.js', 'timeline-edit.js', 'timeline-groups.js', 'screen-media.js', 'screen-media-editor.js', 'render-settings.js', 'ui-transition-graph.js', 'ui-transition-engine.js', 'ui-transitions.js', 'ui-transition-editor.js', 'animation-layers.js', 'animation-layer-ui.js', 'asset-settings.js', 'scene-catalog.js', 'index.html', 'styles.css', 'desktop.css', 'controls.css', 'asset-settings.css', 'layout-responsive.css', 'task-progress.js', 'lipsync.js', 'fades.js', 'classroom-props.js', 'app.js', 'motion-names.js', 'pronunciation.js', 'layout-schema.js', 'layout.js', 'embed.js'):
+                    if name not in ('story-timeline.js', 'story-editor.js', 'story-voice.js', 'notifications.js', 'export-queue.js', 'post-effects.js', 'post-effects-editor.js', 'settings-file-links.js','color-inputs.js','character-colors.js','character-color-editor.js','code-ui.js', 'composition.js', 'composition-editor.js', 'audio-effects-preview.js', 'panel-selection.js', 'project-removal.js', 'timeline-edit.js', 'timeline-groups.js', 'screen-media.js', 'screen-media-editor.js', 'render-settings.js', 'ui-transition-graph.js', 'ui-transition-engine.js', 'ui-transitions.js', 'ui-transition-editor.js', 'animation-layers.js', 'animation-layer-ui.js', 'asset-settings.js', 'scene-catalog.js', 'index.html', 'styles.css', 'desktop.css', 'controls.css', 'asset-settings.css', 'layout-responsive.css', 'task-progress.js', 'lipsync.js', 'fades.js', 'classroom-props.js', 'app.js', 'motion-names.js', 'game-asset-aliases.js', 'pronunciation.js', 'layout-schema.js', 'layout.js', 'embed.js'):
                         return self.send_error(404)
-                    if name=='scene-catalog.js':
+                    if name=='game-asset-aliases.js':
+                        data=alias_script
+                    elif name=='scene-catalog.js':
                         data=('globalThis.CreatorSceneCatalog='+json.dumps(background_entries,ensure_ascii=False)+';').encode('utf8')
                     elif name=='classroom-props.js':
                         data=('globalThis.CreatorClassroomProps='+json.dumps(json.loads(catalog_file.read_text(encoding='utf8'))['items'] if generic_props else [],ensure_ascii=False)+';').encode('utf8')
