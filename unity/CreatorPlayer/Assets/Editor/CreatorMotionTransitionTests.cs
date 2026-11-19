@@ -47,7 +47,64 @@ public static class CreatorMotionTransitionTests {
    int count=evaluations;Hold(.1f,.1f);
    if(evaluations!=count)throw new Exception("Repeated state advanced physics");
    Hold(.1f,.8f);Hold(0,0);Hold(1,1);
+   TestPlacement();
+   TestForehead();
    Debug.Log("Motion transition regression passed: three blend/direct cycles; inactive inputs released; direct pose and root stable.");
   } finally {set("mainLayers",null);set("graph",default(PlayableGraph));layers.Dispose();if(graph.IsValid())graph.Destroy();UnityEngine.Object.DestroyImmediate(root);UnityEngine.Object.DestroyImmediate(a);UnityEngine.Object.DestroyImmediate(b);}
+ }
+
+ static void TestPlacement() {
+  GameObject Build(string name,out ActorClothPhysics solver) {
+   var root=new GameObject(name);
+   var anchor=new GameObject("Anchor").transform;anchor.SetParent(root.transform,false);
+   var bone=new GameObject("Skirt").transform;bone.SetParent(anchor,false);
+   var tip=new GameObject("Tip").transform;tip.SetParent(bone,false);tip.localPosition=new Vector3(.12f,.01f,.025f);
+   solver=root.AddComponent<ActorClothPhysics>();solver.simulateInLateUpdate=false;
+   solver.Configure(root.transform,new ActorClothPhysics.Data {
+    dynamic=new[]{new ActorClothPhysics.BoneData{name="Skirt",stiffness=.04f,damping=.12f},new ActorClothPhysics.BoneData{name="Tip"}},
+    @static=Array.Empty<ActorClothPhysics.ColliderData>()});
+   return root;
+  }
+  var reference=Build("Reference",out var refSolver);var placed=Build("Placed",out var movedSolver);
+  try {
+   var refClock=new ActorPhysicsPlayback();var movedClock=new ActorPhysicsPlayback();
+   string origin="old";
+   placed.transform.SetPositionAndRotation(new Vector3(-1.1f,.15f,.4f),Quaternion.Euler(0,40,0));
+   void Advance(float t,string clip) {
+    refClock.Apply(true,t,clip,t,4,null,reference.transform,new[]{refSolver},(x,l)=>{},"new");
+    movedClock.Apply(true,t,clip,t,4,null,placed.transform,new[]{movedSolver},(x,l)=>{},origin);
+   }
+   for(int i=0;i<=9;i++)Advance(i/30f,"idle");
+   placed.transform.SetPositionAndRotation(Vector3.zero,Quaternion.identity);origin="new";
+   Advance(10/30f,"idle");
+   if(Vector3.Distance(refSolver.GetTipPositions()[0],movedSolver.GetTipPositions()[0])>.00005f)throw new Exception("Discontinuous placement introduced cloth velocity");
+   var before=placed.transform.InverseTransformPoint(movedSolver.GetTipPositions()[0]);
+   placed.transform.SetPositionAndRotation(new Vector3(.1f,.7f,1),Quaternion.Euler(0,-22,0));
+   Advance(10/30f,"idle");
+   if(Vector3.Distance(before,placed.transform.InverseTransformPoint(movedSolver.GetTipPositions()[0]))>.00005f)throw new Exception("Paused reblocking reset the cloth pose");
+   placed.transform.SetPositionAndRotation(Vector3.zero,Quaternion.identity);
+   Advance(11/30f,"new pose");
+   if(Vector3.Distance(refSolver.GetTipPositions()[0],movedSolver.GetTipPositions()[0])>.00005f)throw new Exception("Combined placement and pose cut lost chain history");
+   placed.transform.position=new Vector3(1.1f,0,.23f);
+   Advance(12/30f,"new pose");
+   if(Vector3.Distance(refSolver.GetTipPositions()[0],placed.transform.InverseTransformPoint(movedSolver.GetTipPositions()[0]))>.00005f)throw new Exception("Large move on the same placement lost chain history");
+   placed.transform.position+=new Vector3(.02f,0,0);
+   Advance(13/30f,"new pose");
+   if(Vector3.Distance(refSolver.GetTipPositions()[0],placed.transform.InverseTransformPoint(movedSolver.GetTipPositions()[0]))<.0002f)throw new Exception("Continuous root movement should retain cloth inertia");
+  } finally {UnityEngine.Object.DestroyImmediate(placed);UnityEngine.Object.DestroyImmediate(reference);}
+ }
+ static void TestForehead() {
+  var mesh=new Mesh();
+  var skin=new Material(Shader.Find("Hidden/InternalErrorShader")){name="m_fce"};
+  try {
+   var points=new[]{new Vector3(-1,0,0),new Vector3(1,0,.1f),new Vector3(0,1,.2f)};
+   mesh.vertices=points;mesh.triangles=new[]{0,1,2};mesh.RecalculateBounds();
+   var surface=new ForeheadSurface(mesh,new[]{skin});
+   var sample=new Vector3(0,.5f,0);
+   if(!surface.TryDepth(sample,out var z) || Mathf.Abs(z-.125f)>.00001f || surface.TryDepth(new Vector3(.95f,.95f,0),out _))
+    throw new Exception("Fringe contact did not use the actual face triangle");
+   points[2].z+=.1f;surface.Update(points);
+   if(!surface.TryDepth(sample,out z) || Mathf.Abs(z-.175f)>.00001f)throw new Exception("Fringe surface ignored facial deformation");
+  } finally {UnityEngine.Object.DestroyImmediate(skin);UnityEngine.Object.DestroyImmediate(mesh);}
  }
 }

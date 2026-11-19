@@ -13,7 +13,7 @@ def main():
     if not (a.player/'creator-dedicated-effects-v2').is_file():raise SystemExit('Player lacks dedicated effects contract')
     if not (a.player/'creator-thought-filter-v1').is_file():raise SystemExit('Player lacks thought vignette filter')
     if not (a.player/'creator-antialiasing-v1').is_file():raise SystemExit('Player lacks MSAA / export supersampling; rebuild Player')
-    if not (a.player/'creator-actor-contacts-v1').is_file():raise SystemExit('Player lacks face and garment contacts; rebuild Player')
+    if not (a.player/'creator-actor-contacts-v2').is_file():raise SystemExit('Player lacks face and garment contacts; rebuild Player')
     if not (a.player/'creator-production-gpu-v1').is_file() or not (a.player/'CreatorPlayer_Data/Plugins/x86_64/GSSGpuExport.dll').is_file():raise SystemExit('Player lacks production GPU export; rebuild with -GpuExportPrototype')
     electron=ROOT/'apps/desktop/electron/node_modules/electron/dist'
     for source in [electron,a.python,a.tools,a.player,ROOT/'apps',ROOT/'services',ROOT/'resources']:

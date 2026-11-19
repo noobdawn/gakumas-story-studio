@@ -28,6 +28,12 @@ public sealed class ActorClothPhysics : MonoBehaviour
         public Vector3 localPosition; public Quaternion localRotation;
         public Vector3 position, previous; public bool initialized;
         public BodyCollider[] obstacles;
+        public Anchor anchor;
+    }
+    sealed class Anchor
+    {
+        public Transform bone;
+        public Matrix4x4 lastInverse, transport;
     }
     sealed class BodyCollider
     {
@@ -90,12 +96,14 @@ public sealed class ActorClothPhysics : MonoBehaviour
     [Range(1, 8)] public int constraintIterations = 4;
     const float StepSeconds = 1f / 60f;
     readonly List<Segment> segments = new List<Segment>();
+    readonly List<Anchor> anchors = new List<Anchor>();
     readonly List<BodyCollider> colliders = new List<BodyCollider>();
     bool bindingsDirty;
     float accumulator;
     public int SegmentCount => segments.Count;
     public int ColliderCount => colliders.Count;
     public SkirtSurfaceCollision surfaceCollision;
+    public FringeFaceContact fringeContact;
     // The hair prefab does not own the body's static proxies. Share their live
     // transform bindings with this actor instance, never with another actor.
     public void AddExternalColliders(ActorClothPhysics bodySolver)
@@ -181,6 +189,10 @@ public sealed class ActorClothPhysics : MonoBehaviour
     }
     public string DebugFirstBackStep { get; private set; }
     public Vector3[] GetTipPositions() => segments.Select(s=>s.child.position).ToArray();
+    public void GetBindRotations(Dictionary<Transform,Quaternion> rotations)
+    {
+        foreach(var s in segments)rotations.Add(s.bone,s.localRotation);
+    }
 
     public void Configure(Transform root, Data data)
     {
@@ -203,6 +215,23 @@ public sealed class ActorClothPhysics : MonoBehaviour
         }
         foreach(var spec in data.@static)
             if(byName.TryGetValue(spec.name,out var bone)) colliders.Add(new BodyCollider {data=spec,bone=bone,torso=spec.name.StartsWith("Spine",StringComparison.Ordinal)});
+        // A hard pose change can also move the head or hips inside the actor. Each chain
+        // uses its first animated parent, outside the chain of simulated rotations.
+        var dynamicBones=new HashSet<Transform>(segments.Select(s=>s.bone));
+        var byAnchor=new Dictionary<Transform,Anchor>();
+        anchors.Clear();
+        foreach(var s in segments)
+        {
+            var parent=s.bone.parent?s.bone.parent:root;
+            for(var t=parent;t && t!=root;t=t.parent)
+                if(dynamicBones.Contains(t))parent=t.parent;
+            if(!byAnchor.TryGetValue(parent,out s.anchor))
+            {
+                s.anchor=new Anchor{bone=parent};
+                anchors.Add(s.anchor);
+                byAnchor.Add(parent,s.anchor);
+            }
+        }
         ResetSimulation();
     }
     public void ResetSimulation()
@@ -217,6 +246,22 @@ public sealed class ActorClothPhysics : MonoBehaviour
         Solve(dt, true);
     }
     public void ApplyCurrentPose() => Solve(0f, false);
+    static void Transport(Segment segment,Matrix4x4 fromPrevious)
+    {
+        if(!segment.initialized)return;
+        segment.position=fromPrevious.MultiplyPoint3x4(segment.position);
+        segment.previous=fromPrevious.MultiplyPoint3x4(segment.previous);
+    }
+    public void MoveHistory(Matrix4x4 fromPrevious)
+    {
+        foreach(var s in segments)Transport(s,fromPrevious);
+        foreach(var anchor in anchors)anchor.lastInverse=anchor.bone.worldToLocalMatrix;
+    }
+    public void MoveHistoryToCurrentAnchors()
+    {
+        foreach(var anchor in anchors)anchor.transport=anchor.bone.localToWorldMatrix*anchor.lastInverse;
+        foreach(var s in segments)Transport(s,s.anchor.transport);
+    }
     void PrepareColliders()
     {
         foreach (var c in colliders) c.Update();
@@ -271,6 +316,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
             s.bone.rotation=rotation*s.bone.rotation;
             if(advance){s.previous=old;s.position=s.child.position;}
         }
+        foreach(var anchor in anchors)anchor.lastInverse=anchor.bone.worldToLocalMatrix;
     }
     float TipRadius(Segment s) => Mathf.Clamp(s.childData.radiusA*collisionRadiusScale,0f,.04f) * Mathf.Abs(actorRoot.lossyScale.x);
     static Vector3 RotateOutside(Vector3 origin,Vector3 direction,Vector3 rest,float fraction,float radius,BodyCollider c)
