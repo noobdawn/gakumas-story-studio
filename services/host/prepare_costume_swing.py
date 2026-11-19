@@ -16,11 +16,11 @@ import costume_catalog
 HERE = Path(__file__).resolve().parent
 pass # dependencies installed in the Python environment
 import UnityPy
+from UnityPy.classes.PPtr import PPtr
 warnings.filterwarnings('ignore', category=UnityPy.exceptions.UnityVersionFallbackWarning)
 UnityPy.config.FALLBACK_UNITY_VERSION = '6000.0.77f1'
 
-def extract(bundle, name, dependencies=()):
-    dynamic, static = [], []
+def components(bundle, dependencies):
     env = UnityPy.load(*(str(p) for p in dependencies))
     primary = env.load_file(str(bundle))
     def objects(file):
@@ -36,6 +36,12 @@ def extract(bundle, name, dependencies=()):
         if not item.m_Script:
             continue
         kind = item.m_Script.read().m_ClassName
+        yield kind, item, obj
+
+
+def extract(bundle, name, dependencies=()):
+    dynamic, static = [], []
+    for kind, item, obj in components(bundle, dependencies):
         if kind not in ('ActorSwingDynamicBone', 'ActorSwingStaticBone'):
             continue
         tree = obj.read_typetree(); bone = item.m_GameObject.read().m_Name
@@ -51,6 +57,45 @@ def extract(bundle, name, dependencies=()):
                                vectorA=collider['vector3_A'], vectorB=collider['vector3_B'],
                                radiusA=collider['float_A'], radiusB=collider['float_B']))
     return {'source': name, 'dynamic': dynamic, 'static': static}
+
+
+def extract_authored(bundle, name, dependencies=()):
+    drivers, layers, limits = [], [], []
+    prefix = 'ActorAnimationQuartzDriver'
+    supported = {'SkirtBone', 'HairBone', 'RotationBone', 'HumanoidUpLegBone', 'HumanoidHandBone', 'HumanoidArmBone'}
+    for kind, item, obj in components(bundle, dependencies):
+        if kind not in ('ActorSwingChain', 'ActorSwingDynamicBone') and kind.removeprefix(prefix) not in supported:
+            continue
+        data = obj.read_typetree()
+        if not data['m_Enabled']:
+            continue
+        owner = item.m_GameObject.read().m_Name
+
+        def bone_name(ref):
+            if not ref['m_PathID']:
+                return ''
+            value = PPtr(assetsfile=obj.assets_file, **ref).read()
+            return (value.m_GameObject.read() if hasattr(value, 'm_GameObject') else value).m_Name
+
+        if kind == 'ActorSwingChain':
+            for layer in data['chains']['layers']:
+                if layer['active']:
+                    layers.append(dict(bones=[bone_name(ref) for ref in layer['bones']], around=bool(layer['around']),
+                                       radius=layer['radius'], smoothing=layer['smoothing']))
+        elif kind == 'ActorSwingDynamicBone':
+            limit = data['limitInfo']
+            if limit['useLimit']:
+                limits.append(dict(bone=owner, minimum={c: limit['axis' + c.upper()]['x'] for c in 'xyz'},
+                                   maximum={c: limit['axis' + c.upper()]['y'] for c in 'xyz'}))
+        else:
+            setting = data['setting'].copy()
+            for key in ('referenceBone', 'referenceHeadBone', 'referenceNeckBone'):
+                if key in setting:
+                    setting[key] = bone_name(setting[key])
+            if kind.startswith(prefix + 'Humanoid'):
+                setting['twistCoefficient'] = setting.pop('coefficient')
+            drivers.append(dict(kind=kind[len(prefix):], bone=owner, **setting))
+    return dict(source=name, drivers=drivers, layers=layers, limits=limits)
 
 def main():
     parser = argparse.ArgumentParser()

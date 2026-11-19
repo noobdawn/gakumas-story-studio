@@ -27,8 +27,17 @@ public sealed class ActorClothPhysics : MonoBehaviour
         public BoneData data, childData; public Transform bone, child;
         public Vector3 localPosition; public Quaternion localRotation;
         public Vector3 position, previous; public bool initialized;
+        public bool hasChain;
         public BodyCollider[] obstacles;
         public Anchor anchor;
+        public ActorQuartzPose.Limit limit;
+        public Quaternion poseLocal;
+    }
+    sealed class Link
+    {
+        public Segment left, right;
+        public float radius, smoothing, restLength;
+        public BodyCollider[] obstacles;
     }
     sealed class Anchor
     {
@@ -38,7 +47,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
     sealed class BodyCollider
     {
         public ColliderData data;
-        public Transform bone, end;
+        public Transform bone, end, limbParent;
         public Vector3 endOffset, lateral, depthAxis;
         public Vector3 a, b, side;
         public float ra, rb, width;
@@ -60,7 +69,17 @@ public sealed class ActorClothPhysics : MonoBehaviour
             float radialScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
             ra = Mathf.Max(0, data.radiusA * radialScale);
             rb = Mathf.Max(0, data.radiusB * radialScale);
-            if (data.type == 1)
+            if (limbParent)
+            {
+                var span = limbParent.position - bone.position;
+                float length = span.magnitude;
+                var axis = length > 1e-6f ? span/length : Vector3.zero;
+                float start = Mathf.Clamp(data.vectorA.x*radialScale, 0, length);
+                float finish = Mathf.Clamp(data.vectorA.y*radialScale, 0, length-start);
+                a = bone.position + axis*start;
+                b = limbParent.position - axis*finish;
+            }
+            else if (data.type == 1)
             {
                 int axis = Mathf.Clamp(Mathf.RoundToInt(data.vectorB.x), 0, 2);
                 var dir = bone.TransformVector(axis == 0 ? Vector3.right : axis == 1 ? Vector3.up : Vector3.forward);
@@ -98,6 +117,15 @@ public sealed class ActorClothPhysics : MonoBehaviour
     readonly List<Segment> segments = new List<Segment>();
     readonly List<Anchor> anchors = new List<Anchor>();
     readonly List<BodyCollider> colliders = new List<BodyCollider>();
+    readonly List<Link> links = new List<Link>();
+    ActorQuartzPose quartz;
+    public int QuartzDrivers => quartz?.Count ?? 0;
+    public int SkirtDrivers => quartz?.Skirts ?? 0;
+    public int HairDrivers => quartz?.Hair ?? 0;
+    public float SkirtDriverAngle => quartz?.MaxSkirtAngle ?? 0;
+    public float HairDriverAngle => quartz?.MaxHairAngle ?? 0;
+    public int ChainLinks => links.Count;
+    public bool OpenGarment { get; private set; }
     bool bindingsDirty;
     float accumulator;
     public int SegmentCount => segments.Count;
@@ -194,13 +222,15 @@ public sealed class ActorClothPhysics : MonoBehaviour
         foreach(var s in segments)rotations.Add(s.bone,s.localRotation);
     }
 
-    public void Configure(Transform root, Data data)
+    public void Configure(Transform root, Data data, ActorQuartzPose.Profile authored = null)
     {
         if (!root || data?.dynamic == null || data.@static == null) throw new ArgumentException("Missing actor or swing metadata");
         actorRoot=root;segments.Clear();colliders.Clear();accumulator=0;bindingsDirty=true;
         var transforms=root.GetComponentsInChildren<Transform>(true);
         if(transforms.GroupBy(t=>t.name).Any(g=>g.Count()>1)) throw new InvalidOperationException("Duplicate actor bone names");
         var byName=transforms.ToDictionary(t=>t.name);
+        quartz = authored == null ? null : new ActorQuartzPose(root, byName, authored.drivers);
+        var limits = authored?.limits.ToDictionary(l => l.bone);
         var specs=data.dynamic.ToDictionary(d=>d.name);
         int Depth(Transform t){int d=0;while(t.parent){d++;t=t.parent;}return d;}
         foreach(var spec in data.dynamic.Where(d=>includeOtherDynamic || d.name.Contains("Jacket") || d.name.Contains("Skirt"))
@@ -210,11 +240,45 @@ public sealed class ActorClothPhysics : MonoBehaviour
             if(!byName.TryGetValue(spec.name,out var bone)) throw new InvalidOperationException("Missing dynamic bone: "+spec.name);
             var child=Enumerable.Range(0,bone.childCount).Select(bone.GetChild).FirstOrDefault(c=>specs.ContainsKey(c.name));
             if(!child) continue;
-            segments.Add(new Segment {data=spec, childData=specs[child.name], bone=bone,child=child,
-                                      localPosition=bone.localPosition,localRotation=bone.localRotation});
+            var segment = new Segment {data=spec, childData=specs[child.name], bone=bone,child=child,
+                                       localPosition=bone.localPosition,localRotation=bone.localRotation};
+            if(limits!=null)limits.TryGetValue(spec.name, out segment.limit);
+            segments.Add(segment);
         }
         foreach(var spec in data.@static)
-            if(byName.TryGetValue(spec.name,out var bone)) colliders.Add(new BodyCollider {data=spec,bone=bone,torso=spec.name.StartsWith("Spine",StringComparison.Ordinal)});
+            if(byName.TryGetValue(spec.name,out var bone))
+            {
+                var collider = new BodyCollider {data=spec,bone=bone,torso=spec.name.StartsWith("Spine",StringComparison.Ordinal)};
+                if(authored!=null && spec.type==2 && (spec.name=="LeftLeg" || spec.name=="RightLeg"))
+                    byName.TryGetValue(spec.name.Replace("Leg","UpLeg"),out collider.limbParent);
+                colliders.Add(collider);
+            }
+        links.Clear();
+        OpenGarment=false;
+        if(authored!=null)
+        {
+            bool open=false, closed=false;
+            var byTip = segments.ToDictionary(s=>s.child.name);
+            foreach(var layer in authored.layers)
+            {
+                int count=layer.bones.Length;
+                int pairs=count>2 && layer.around ? count : count-1;
+                for(int i=0;i<pairs;i++)
+                {
+                    string a=layer.bones[i], b=layer.bones[(i+1)%count];
+                    if(string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b) || a==b ||
+                       !byTip.TryGetValue(a,out var left) || !byTip.TryGetValue(b,out var right))continue;
+                    left.hasChain=right.hasChain=true;
+                    if(a.Contains("Skirt") || a.Contains("Jacket"))
+                    {
+                        if(layer.around)closed=true;else open=true;
+                    }
+                    links.Add(new Link {left=left,right=right,radius=Mathf.Max(0,layer.radius),
+                        smoothing=Mathf.Clamp01(layer.smoothing),restLength=Vector3.Distance(root.InverseTransformPoint(left.child.position),root.InverseTransformPoint(right.child.position))});
+                }
+            }
+            OpenGarment=open && !closed;
+        }
         // A hard pose change can also move the head or hips inside the actor. Each chain
         // uses its first animated parent, outside the chain of simulated rotations.
         var dynamicBones=new HashSet<Transform>(segments.Select(s=>s.bone));
@@ -238,6 +302,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
     {
         accumulator=0;
         foreach(var s in segments){s.bone.localPosition=s.localPosition;s.bone.localRotation=s.localRotation;s.initialized=false;}
+        quartz?.Reset();
     }
     // Caller must evaluate animation before stepping; fixed timestep only.
     public void Step(float dt)
@@ -259,6 +324,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
     }
     public void MoveHistoryToCurrentAnchors()
     {
+        quartz?.Apply();
         foreach(var anchor in anchors)anchor.transport=anchor.bone.localToWorldMatrix*anchor.lastInverse;
         foreach(var s in segments)Transport(s,s.anchor.transport);
     }
@@ -268,17 +334,24 @@ public sealed class ActorClothPhysics : MonoBehaviour
         if (!bindingsDirty) return;
         foreach (var s in segments)
             s.obstacles = colliders.Where(c => (s.childData.collisionMask & c.data.collisionMask) != 0).ToArray();
+        foreach (var link in links)
+        {
+            int mask=link.left.childData.collisionMask & link.right.childData.collisionMask;
+            link.obstacles=colliders.Where(c => (c.data.collisionMask & mask)!=0).ToArray();
+        }
         bindingsDirty = false;
     }
     void Solve(float dt, bool advance)
     {
-        PrepareColliders();
         foreach(var s in segments){s.bone.localPosition=s.localPosition;s.bone.localRotation=s.localRotation;}
+        quartz?.Apply();
+        PrepareColliders();
         foreach(var s in segments)
         {
             var firstStep=!s.initialized;
             if(!simulateSkirt && s.data.name.Contains("Skirt"))continue;
             var origin=s.bone.position;var restTip=s.child.position;var restDirection=restTip-origin;var length=restDirection.magnitude;
+            s.poseLocal=s.bone.localRotation;
             if(length<.00001f)continue;
             if(!s.initialized){s.position=restTip;s.previous=restTip;s.initialized=true;}
             var old=s.position;
@@ -293,7 +366,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
                 var direction=point-origin;if(direction.sqrMagnitude<1e-12f)direction=restDirection;
                 point=origin+direction.normalized*length;
                 foreach(var c in s.obstacles) point=ResolveCollision(point,radius,c);
-                if(separateClothingLayers && s.data.name.Contains("Jacket"))point=ResolveLayer(point,s);
+                if(separateClothingLayers && !s.hasChain && s.data.name.Contains("Jacket"))point=ResolveLayer(point,s);
                 if(experimentalHandCollisions && s.data.name.Contains("Jacket"))
                     foreach(var c in colliders)
                         if(c.bone.name=="LeftHand" || c.bone.name=="RightHand")
@@ -301,7 +374,8 @@ public sealed class ActorClothPhysics : MonoBehaviour
             }
             var directionFinal=point-origin;if(directionFinal.sqrMagnitude<1e-12f)directionFinal=restDirection;
             float angleLimit=skirtMaxAngle>=0f&&s.data.name.Contains("Skirt")?skirtMaxAngle:maxAngle;
-            var desired=Vector3.RotateTowards(restDirection,directionFinal.normalized*length,angleLimit*Mathf.Deg2Rad,0);
+            var desired=s.limit!=null ? directionFinal.normalized*length :
+                Vector3.RotateTowards(restDirection,directionFinal.normalized*length,angleLimit*Mathf.Deg2Rad,0);
             if(refineContacts && s.data.name.Contains("Skirt"))desired=RefineDirection(s,origin,restDirection,desired,length,radius,angleLimit);
             // Contact is evaluated after the swing cone. Rotate on the fixed-length sphere
             // so restoring bone length cannot put the tip back inside the collider.
@@ -314,9 +388,73 @@ public sealed class ActorClothPhysics : MonoBehaviour
             var rotation=Quaternion.FromToRotation(restDirection,desired);
             if(firstStep && s.data.name=="RightBackJacket1_S")DebugFirstBackStep=$"origin={origin.ToString("F8")} rest={restTip.ToString("F8")} point={point.ToString("F8")} desired={desired.ToString("F8")} angle={Quaternion.Angle(Quaternion.identity,rotation):F8}";
             s.bone.rotation=rotation*s.bone.rotation;
+            ApplyLimit(s);
             if(advance){s.previous=old;s.position=s.child.position;}
         }
+        if(links.Count>0)SolveLinks(advance);
         foreach(var anchor in anchors)anchor.lastInverse=anchor.bone.worldToLocalMatrix;
+    }
+    static void ApplyLimit(Segment s)
+    {
+        if(s.limit==null)return;
+        var angles=(Quaternion.Inverse(s.poseLocal)*s.bone.localRotation).eulerAngles;
+        for(int i=0;i<3;i++)angles[i]=Mathf.Clamp(Mathf.DeltaAngle(0,angles[i]),s.limit.minimum[i],s.limit.maximum[i]);
+        s.bone.localRotation=s.poseLocal*Quaternion.Euler(angles);
+    }
+    static void OffsetTip(Segment segment,Vector3 offset)
+    {
+        if(offset.sqrMagnitude<1e-12f)return;
+        var direction=segment.child.position-segment.bone.position;
+        if(direction.sqrMagnitude<1e-12f)return;
+        segment.bone.rotation=Quaternion.FromToRotation(direction,direction+offset)*segment.bone.rotation;
+        ApplyLimit(segment);
+    }
+    // Parameters of the nearest points on two finite segments, also valid for sphere colliders.
+    internal static void ClosestSegmentParameters(Vector3 a,Vector3 edge,Vector3 c,Vector3 axis,out float t,out float u)
+    {
+        var r=a-c;
+        float aa=edge.sqrMagnitude, bb=axis.sqrMagnitude, ab=Vector3.Dot(edge,axis);
+        float ar=Vector3.Dot(edge,r), br=Vector3.Dot(axis,r);
+        float determinant=aa*bb-ab*ab;
+        t=determinant>1e-12f ? Mathf.Clamp01((ab*br-bb*ar)/determinant) : 0;
+        u=bb>1e-12f ? Mathf.Clamp01((t*ab+br)/bb) : 0;
+        t=aa>1e-12f ? Mathf.Clamp01((u*ab-ar)/aa) : 0;
+    }
+    void SolveLinks(bool advance)
+    {
+        float scale=Mathf.Abs(actorRoot.lossyScale.x);
+        foreach(var link in links)
+        {
+            var left=link.left;var right=link.right;
+            if(!left.initialized || !right.initialized)continue;
+            var a=left.child.position;var b=right.child.position;
+            var ab=b-a;float length=ab.magnitude;
+            if(length<1e-6f)continue;
+            float radius=link.radius*scale;
+            float minimum=Mathf.Max(2*radius,(left.childData.radiusA+right.childData.radiusA)*scale);
+            float gap=Mathf.Max(0,minimum-length);
+            float change=gap>0 ? gap : (link.restLength*scale-length)*link.smoothing;
+            var rightPush=ab*(.5f*change/length);var leftPush=-rightPush;
+            foreach(var col in link.obstacles)
+            {
+                var axis=col.b-col.a;
+                ClosestSegmentParameters(a,ab,col.a,axis,out float t,out float u);
+                var normal=(a+ab*t)-(col.a+axis*u);
+                float distance=normal.magnitude,clearance=radius+Mathf.Lerp(col.ra,col.rb,u);
+                if(distance>=clearance || distance<1e-6f)continue;
+                var push=normal*((clearance-distance)/distance);
+                float w=1-t,denominator=w*w+t*t;
+                leftPush+=push*(w/denominator);rightPush+=push*(t/denominator);
+            }
+            OffsetTip(left,leftPush);OffsetTip(right,rightPush);
+        }
+        if(advance)
+            foreach(var s in segments)if(s.initialized)
+            {
+                var tip=s.child.position;
+                s.previous+=tip-s.position;
+                s.position=tip;
+            }
     }
     float TipRadius(Segment s) => Mathf.Clamp(s.childData.radiusA*collisionRadiusScale,0f,.04f) * Mathf.Abs(actorRoot.lossyScale.x);
     static Vector3 RotateOutside(Vector3 origin,Vector3 direction,Vector3 rest,float fraction,float radius,BodyCollider c)
@@ -449,10 +587,10 @@ public sealed class ActorClothPhysics : MonoBehaviour
     }
     void LateUpdate()
     {
-        if(!simulateInLateUpdate || segments.Count==0)return;
+        if(!simulateInLateUpdate || (segments.Count==0 && QuartzDrivers==0))return;
         accumulator+=Mathf.Min(Time.deltaTime,.1f);
         while(accumulator>=StepSeconds){Step(StepSeconds);accumulator-=StepSeconds;}
     }
-    void OnDisable(){if(segments.Count>0)ResetSimulation();}
+    void OnDisable(){if(segments.Count>0 || QuartzDrivers>0)ResetSimulation();}
 }
 

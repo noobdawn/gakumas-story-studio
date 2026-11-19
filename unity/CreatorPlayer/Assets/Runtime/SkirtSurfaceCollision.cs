@@ -11,13 +11,16 @@ public sealed class SkirtSurfaceCollision : MonoBehaviour
     sealed class Leg
     {
         public Transform upper, knee;
-        public Vector3 a, axis;
+        public Vector3 a, axis, span, low, high;
         public float length, radius;
         public void Update(Matrix4x4 worldToMesh)
         {
             a = worldToMesh.MultiplyPoint3x4(upper.position);
-            Vector3 ab = worldToMesh.MultiplyPoint3x4(knee.position) - a;
-            length = ab.magnitude; axis = length > 1e-6f ? ab / length : Vector3.down;
+            var b = worldToMesh.MultiplyPoint3x4(knee.position);
+            span = b-a;
+            length = span.magnitude; axis = length > 1e-6f ? span/length : Vector3.down;
+            low = Vector3.Min(a,b)-Vector3.one*radius;
+            high = Vector3.Max(a,b)+Vector3.one*radius;
         }
         public Vector3 Offset(Vector3 p) => p - (a + axis * Mathf.Clamp(Vector3.Dot(p-a,axis),0,length));
     }
@@ -36,14 +39,15 @@ public sealed class SkirtSurfaceCollision : MonoBehaviour
     Mesh baked;
     SkinnedMeshRenderer skin;
     MeshRenderer display;
-    bool diagnostics, originalEnabled, measureOnly;
+    bool diagnostics, originalEnabled, measureOnly, authoredGarment, openGarment;
     int lastRevision = -1;
     public Metrics before, after;
+    public bool ProjectionRan { get; private set; }
     public string Description => $"garment vertices={cloth.Count} triangles={triangles.Count} body triangles={envelope.TriangleCount} thigh radii={legs[0].radius:F4}/{legs[1].radius:F4}";
 
-    public bool Configure(SkinnedMeshRenderer renderer, bool report, bool observeOnly)
+    public bool Configure(SkinnedMeshRenderer renderer, bool report, bool observeOnly, bool authored = false, bool open = false)
     {
-        skin=renderer; originalEnabled=skin.enabled; diagnostics=report; measureOnly=observeOnly;
+        skin=renderer; originalEnabled=skin.enabled; diagnostics=report; measureOnly=observeOnly; authoredGarment=authored; openGarment=open;
         var bones=skin.bones;
         bool[] garment=bones.Select(b=>b && (b.name.Contains("Skirt") || b.name.Contains("Jacket"))).ToArray();
         bool[] legBones=bones.Select(b=>b && (b.name.StartsWith("LeftUpLeg") || b.name.StartsWith("RightUpLeg") ||
@@ -138,12 +142,13 @@ public sealed class SkirtSurfaceCollision : MonoBehaviour
         {
             float r=leg.radius+.003f;
             var delta=leg.Offset(p);
+            if(openGarment && (delta.sqrMagnitude>=r*r || Vector3.Dot(delta,n)<=0))continue;
             if(delta.sqrMagnitude>r*r*2.25f)continue;
             float along=Vector3.Dot(delta,n);
             float square=r*r-(delta.sqrMagnitude-along*along);
             if(square>0)push=Mathf.Max(push,Mathf.Sqrt(square)-along);
         }
-        return Mathf.Max(push,envelope.Exit(p,n));
+        return openGarment ? push : Mathf.Max(push,envelope.Exit(p,n));
     }
     float Depth(Vector3 p) => Mathf.Max(0,legs[0].radius-legs[0].Offset(p).magnitude,legs[1].radius-legs[1].Offset(p).magnitude);
     Metrics Measure()
@@ -170,12 +175,57 @@ public sealed class SkirtSurfaceCollision : MonoBehaviour
         if(movable[b])shifts[b]=Mathf.Max(shifts[b],distance);
         if(!edge&&movable[c])shifts[c]=Mathf.Max(shifts[c],distance);
     }
+    static bool EdgeHitsLeg(Vector3 a,Vector3 edge,Leg leg)
+    {
+        ActorClothPhysics.ClosestSegmentParameters(a,edge,leg.a,leg.span,out float t,out float u);
+        return ((a-leg.a)+edge*t-leg.span*u).sqrMagnitude < leg.radius*leg.radius;
+    }
+    static bool InsideFace(Vector3 p,Vector3 a,Vector3 b,Vector3 c,Vector3 normal)
+    {
+        return Vector3.Dot(Vector3.Cross(b-a,p-a),normal)>=0 &&
+               Vector3.Dot(Vector3.Cross(c-b,p-b),normal)>=0 &&
+               Vector3.Dot(Vector3.Cross(a-c,p-c),normal)>=0;
+    }
+    static bool FaceHitsLeg(Vector3 a,Vector3 b,Vector3 c,Leg leg)
+    {
+        var ab=b-a;var ac=c-a;var normal=Vector3.Cross(ab,ac);
+        float r2=leg.radius*leg.radius*normal.sqrMagnitude;
+        float start=Vector3.Dot(leg.a-a,normal), end=start+Vector3.Dot(leg.span,normal);
+        if(start*end>0 && Mathf.Min(start*start,end*end)>=r2)return false;
+        // Edge half-planes are unchanged by projection along the triangle normal.
+        if(r2>0 && ((start*start<r2 && InsideFace(leg.a,a,b,c,normal)) ||
+                     (end*end<r2 && InsideFace(leg.a+leg.span,a,b,c,normal)) ||
+                     (start*end<0 && InsideFace(leg.a+leg.span*(start/(start-end)),a,b,c,normal))))return true;
+        return EdgeHitsLeg(a,ab,leg) || EdgeHitsLeg(b,c-b,leg) || EdgeHitsLeg(a,ac,leg);
+    }
+    bool GarmentHitsThigh()
+    {
+        foreach(int i in cloth)
+        {
+            var p=vertices[i];
+            foreach(var leg in legs)if(leg.Offset(p).sqrMagnitude<leg.radius*leg.radius)return true;
+        }
+        // A long hem triangle can cut a thigh while all three vertices are outside.
+        foreach(var face in triangles)
+        {
+            var a=vertices[face.a];var b=vertices[face.b];var c=vertices[face.c];
+            var lo=Vector3.Min(a,Vector3.Min(b,c));var hi=Vector3.Max(a,Vector3.Max(b,c));
+            foreach(var leg in legs)
+            {
+                if(lo.x>leg.high.x || lo.y>leg.high.y || lo.z>leg.high.z ||
+                   hi.x<leg.low.x || hi.y<leg.low.y || hi.z<leg.low.z)continue;
+                if(FaceHitsLeg(a,b,c,leg))return true;
+            }
+        }
+        return false;
+    }
     public void SetDisplay(bool active,int revision)
     {
         if(!originalEnabled)return;
         if(!active || skin.forceRenderingOff)
         {
             lastRevision=-1;
+            ProjectionRan=false;
             skin.enabled=originalEnabled;
             if(display)display.enabled=false;
             return;
@@ -186,13 +236,22 @@ public sealed class SkirtSurfaceCollision : MonoBehaviour
         foreach(var leg in legs)leg.Update(toMesh);
         if(diagnostics)before=Measure();
         bool changed=false;
-        if(!measureOnly)
+        ProjectionRan=!measureOnly && (!authoredGarment || GarmentHitsThigh());
+        if(ProjectionRan)
         {
             var basis=toMesh*hips.localToWorldMatrix;
-            envelope.Update(vertices,(legs[0].a+legs[1].a)*.5f,basis.MultiplyVector(bindRight),basis.MultiplyVector(bindUp));
+            if(!openGarment)envelope.Update(vertices,(legs[0].a+legs[1].a)*.5f,basis.MultiplyVector(bindRight),basis.MultiplyVector(bindUp));
             foreach(int i in cloth)
             {
                 outward[i]=basis.MultiplyVector(restOut[i]).normalized;
+                // Separate pant legs and open coat panels have their own outward side.
+                // A hip-wide envelope would stretch their inner seams across the gap.
+                if(openGarment)
+                {
+                    var left=legs[0].Offset(vertices[i]);var right=legs[1].Offset(vertices[i]);
+                    var radial=left.magnitude-legs[0].radius<right.magnitude-legs[1].radius?left:right;
+                    if(radial.sqrMagnitude>1e-10f)outward[i]=radial.normalized;
+                }
                 float d=Exit(vertices[i],outward[i]);shifts[i]=0;
                 if(d>0){vertices[i]+=outward[i]*d;changed=true;}
             }

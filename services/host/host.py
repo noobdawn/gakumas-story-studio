@@ -320,6 +320,7 @@ def main():
             swing=physics_root/'costumes'
             if not swing.is_dir(): raise RuntimeError('服装实验物理数据不可用')
             command += ['-creator-swing-dir',str(swing.resolve())]
+            command += ['-creator-quartz-dir',str((physics_root/'quartz-v1').resolve())]
         if (player.parent/'creator-hair-physics-v1').is_file():
             hair_swing=physics_root/'hair'
             if not hair_swing.is_dir(): raise RuntimeError('头发实验物理数据不可用')

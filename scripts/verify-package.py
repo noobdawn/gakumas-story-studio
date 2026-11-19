@@ -14,6 +14,7 @@ def main():
     root=args.package.resolve()
     assert (root/'runtime/player/creator-antialiasing-v1').is_file(), 'Antialiasing capability missing'
     assert (root/'runtime/player/creator-actor-contacts-v2').is_file(), 'Actor contact capability missing'
+    assert (root/'runtime/player/creator-authored-quartz-v1').is_file(), 'Authored Quartz capability missing'
     assert (root/'runtime/player/creator-production-gpu-v1').is_file(), 'Production GPU capability missing'
     assert (root/'runtime/player/CreatorPlayer_Data/Plugins/x86_64/GSSGpuExport.dll').is_file(), 'GPU plugin missing'
     manifest=json.loads((root/'manifest-sha256.json').read_text('utf-8'))

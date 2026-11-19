@@ -13,15 +13,16 @@ def _validate(target, fingerprint, expected=None):
         raise ValueError('物理缓存不匹配，请重新准备资源')
     items = report['items']
     if expected is not None and {i['file'] for i in items} != expected:
-        raise ValueError('脸部碰撞缓存与本批次的资源清单不匹配')
+        raise ValueError('物理缓存与本批次的资源清单不匹配')
     for item in items:
         file = (target / item['file']).resolve()
         if target not in file.parents or not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != item['sha256']:
             raise ValueError('物理缓存文件缺失或已变化：' + item['name'])
 
 
-def _write_group(root, target, fingerprint, sources, folders):
-    from prepare_costume_swing import extract
+def _write_group(root, target, fingerprint, sources, folders, extractor=None):
+    if extractor is None:
+        from prepare_costume_swing import extract as extractor
 
     def bundle(name):
         p = (root / 'bundles' / (name + '.bundle')).resolve(strict=True)
@@ -37,7 +38,7 @@ def _write_group(root, target, fingerprint, sources, folders):
         items = []
         for folder, name, deps in sources:
             source = bundle(name)
-            data = extract(source, name, [bundle(n) for n in deps])
+            data = extractor(source, name, [bundle(n) for n in deps])
             raw = json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf8')
             relative = (Path(folder) / (name + '.json')).as_posix()
             (staging / relative).write_bytes(raw)
@@ -80,6 +81,17 @@ def prepare(root):
         _validate(face_target, fingerprint, {name + '.json' for name in faces})
     else:
         _write_group(root, face_target, fingerprint, [('', name, []) for name in faces], [])
+    authored = target / 'quartz-v1'
+    parts = json.loads((target / 'report.json').read_text('utf8'))['items']
+    expected = {part['name'] + '.json' for part in parts}
+    if authored.exists():
+        _validate(authored, fingerprint, expected)
+    else:
+        from prepare_costume_swing import extract_authored
+        import costume_catalog
+        dependencies = {row['name']: row['dependencyBundles'] for row in costume_catalog.load(root)} if parts else {}
+        sources = [('', part['name'], dependencies.get(part['name'], [])) for part in parts]
+        _write_group(root, authored, fingerprint, sources, [], extract_authored)
     return target
 
 
