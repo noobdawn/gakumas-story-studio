@@ -23,7 +23,7 @@ globalThis.CreatorScreenMediaEditor={create(env){
     const linked=env.related(c);
     if(c.mediaLink!==previousLink||linked.some(item=>env.getClip(item.id)?.track.locked))throw Error('音画关联已改变或轨道已锁定');
     const old=asset(c),oldName=c.name;
-    if(old&&c.name===env.label(old))c.name=env.label(a);
+    if(old&&!c.nameEdited&&c.name===env.label(old))c.name=env.label(a);
     a.visual=info;c.assetId=a.id;c.sourceOffset=0;
     const projectAsset=state().assets.find(x=>x.id===a.id);
     if(projectAsset)projectAsset.visual=info;
@@ -36,7 +36,7 @@ globalThis.CreatorScreenMediaEditor={create(env){
     }else{
      for(const item of linked)if(item!==c){
       item.assetId=a.id;item.sourceOffset=0;delete item.originalLoop;
-      if(item.name===oldName+' · 声音')item.name=c.name+' · 声音';
+      if(!item.nameEdited&&item.name===oldName+' · 声音')item.name=c.name+' · 声音';
      }
     }
    }

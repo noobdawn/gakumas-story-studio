@@ -149,6 +149,17 @@ module.exports=async function(win,ui,temp) {
   assert.equal(clip(await snapshot(),'face').playback,'loop');
   assert.equal(clip(await snapshot(),'face').sourceOffset,.4);
 
+  // Generated labels follow the source. A manually edited label can also equal the old asset name.
+  const beforeNaming=await snapshot(),named=structuredClone(fixture);
+  clip(named,'face').name='微笑';
+  await load(named,'face');
+  await click('#clip-expression-replace');await click('[data-expression-pick="asset-face-motion-fixture_frown_f"]');await apply('expression');
+  assert.equal(clip(await snapshot(),'face').name,'皱眉');
+  await set('#clip-name','排练备注');await set('#clip-name','皱眉');
+  await click('#clip-expression-replace');await click('[data-expression-pick="asset-face-motion-fixture_smile_f"]');await apply('expression');
+  assert.equal(clip(await snapshot(),'face').name,'皱眉');
+  await load(beforeNaming,'face');
+
   // No mutation after cancel, a late lock, a project switch, or failed channel preparation.
   const openPending=async()=>{
     await click('#clip-expression-replace');await click('[data-expression-pick="asset-face-motion-fixture_pending_f"]');

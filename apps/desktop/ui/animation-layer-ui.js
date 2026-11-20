@@ -110,7 +110,7 @@
   }
   function openMotionPicker(track,clip){
    CreatorClipSources.picker(e,track,clip,{
-    key:'motion',title:'更换动画',hint:'保留片段排时和播放设置，新动画从头播放。',
+    key:'motion',title:'更换动画',followSourceName:true,hint:'保留片段排时和播放设置，新动画从头播放。',
     kinds:{all:'全部',pose:'仅姿势',animation:'仅动画',overlay:'仅可叠加'},
     items:kind=>e.assets().filter(a=>{const d=e.motion(a.id);return d&&(track.layerRole==='overlay'||!d.isAdditive)&&L.matchesFilter(d,kind);}),
     describe:a=>motionKind(e.motion(a.id))+' · '+Number(e.motion(a.id).length.toFixed(3))+' 秒',
@@ -146,7 +146,8 @@
    const mouthOnly=Boolean(clip.lipSyncSource);
    const kinds={...expressionKinds};if(!e.layered)delete kinds.face;
    CreatorClipSources.picker(e,track,clip,{
-    key:'expression',title:mouthOnly?'更换口型嘴形':'更换表情',hint:'保留片段名称、排时、权重关键帧和渐变，新素材从头取样。',
+    key:'expression',title:mouthOnly?'更换口型嘴形':'更换表情',followSourceName:!mouthOnly,
+    hint:'保留自定义片段名、排时、权重关键帧和渐变，新素材从头取样。',
     kinds:mouthOnly?null:{all:'全部',...kinds},
     items:kind=>e.assets().filter(a=>{
      const type=expressionKind(a.id);

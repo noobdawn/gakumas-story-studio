@@ -631,12 +631,12 @@
     if(locate)locate.onclick=()=>seekFrame(Math.min(Math.ceil((clip.start+clip.len)*fps-1e-7)-1,Math.round((clip.start+clip.len/2)*fps)));
     const scene=$('#clip-scene-replace'),audio=$('#clip-audio-replace');
     if(scene)scene.onclick=()=>pickClipSource(track,clip,{
-      key:'scene',title:'更换场景',hint:'新场景使用这个片段的起止时间。',describe:()=> '场景',
+      key:'scene',title:'更换场景',followSourceName:true,hint:'新场景使用这个片段的起止时间。',describe:()=> '场景',
       items:()=>{const ids=new Set(sceneAssets.map(a=>a.sceneId));return allAssets().filter(a=>ids.has(a.sceneId));},
       apply:asset=>{clip.assetId=asset.id;}
     });
     if(audio)audio.onclick=()=>pickClipSource(track,clip,{
-      key:'audio',title:'更换音频',hint:'新音频从头播放，沿用片段时长、音量、淡入淡出和声音效果。原始循环点可按新素材重新选择。',
+      key:'audio',title:'更换音频',followSourceName:true,hint:'新音频从头播放，沿用片段时长、音量、淡入淡出和声音效果。原始循环点可按新素材重新选择。',
       items:()=>allAssets().filter(a=>isAudioSource(a)&&a.available!==false&&!assetIssues[a.id]),describe:a=>a.type,
       prepare:readAudioDuration,
       apply:asset=>{
@@ -870,7 +870,11 @@
 
   function bindClipFields(clip){
     const track=getClip(clip.id)?.track;
-    $('#clip-name').onchange=e=>{const before=copyState();clip.name=e.target.value.trim()||clip.name;if(JSON.stringify(before)!==JSON.stringify(state))remember(before);renderTimeline();renderInspector();};
+    $('#clip-name').onchange=e=>{
+      const name=e.target.value.trim();
+      if(!name||name===clip.name){e.target.value=clip.name;return;}
+      const before=copyState();clip.name=name;clip.nameEdited=true;remember(before);renderTimeline();renderInspector();
+    };
     let beforeTiming=null;const timing=(finish=false)=>{const startEl=$('#clip-start'),lenEl=$('#clip-length');if(!startEl.value||!lenEl.value)return;const start=quantize(Math.max(0,Math.min(duration-frame,Number(startEl.value)))),len=quantize(Math.max(frame,Math.min(duration-start,Number(lenEl.value))));if(canEdit(clip,start,len)){beforeTiming ||= copyState();setClipTiming(clip,start,len);renderTimeline();updateClock();}else if(finish)notify('片段重叠或轨道已锁定');if(finish){if(beforeTiming){const original=beforeTiming.tracks.flatMap(t=>t.clips).find(c=>c.id===clip.id);for(const item of relatedClips(clip)){const prior=beforeTiming.tracks.flatMap(t=>t.clips).find(c=>c.id===item.id);if(prior?.mediaKeys&&item.len<prior.len-frame/2)item.mediaKeys=CreatorScreenMedia.slice(prior.mediaKeys,0,item.len);}if(original&&clip.len<original.len-frame/2)for(const [property,keys] of Object.entries(clip.propertyKeys||{}))if(keys.length){const boundary=sampleKeys(keys,clip.len);clip.propertyKeys[property]=keys.filter(k=>k.time<clip.len-frame/2).concat({time:clip.len,value:boundary});}for(const c of relatedClips(clip)){const f=getClip(c.id);if(f&&['animation','expression'].includes(f.track.type))CreatorFades.clampStored(c,fadeSpan(c,f.track.type));}remember(beforeTiming);beforeTiming=null;renderTimeline();}renderInspector();}};
     $('#clip-start').oninput=()=>timing();$('#clip-length').oninput=()=>timing();$('#clip-start').onchange=()=>timing(true);$('#clip-length').onchange=()=>timing(true);
     const dialogue=state.dialogues.find(x=>x.id===clip.dialogue);

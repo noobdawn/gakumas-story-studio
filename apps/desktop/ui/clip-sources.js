@@ -82,7 +82,9 @@ globalThis.CreatorClipSources = (() => {
         const current = candidate();
         if (current.scope !== asset.scope || current.projectId !== asset.projectId || current.extension !== asset.extension) throw Error('素材来源已改变，请重新选择');
         const before = structuredClone(initial);
+        const followName = config.followSourceName && !clip.nameEdited && clip.name === e.name(original);
         apply(current, prepared);
+        if (followName) clip.name = e.name(current.id);
         e.remember(before);
         e.closeModal();
         e.render();
