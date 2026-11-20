@@ -37,6 +37,14 @@ runtime-paths.js 与 runtime_paths.py 从程序所在位置解析源码与运行
 初始化向导依次处理目录、语音、游戏资源和完成。下载器固定组件 URL 与 SHA-256；拒绝越界归档路径和链接，失败保留已验证缓存，临时安装目录与成品目录分离。GPT-SoVITS 仍为已有本地配置接入。
 
 
+## 角色物理的工程与运行时接口
+
+工程 JSON 在 `state.globalSettings.physicsMode` 保存 `none`、`gss`、`quartz` 或 `hybrid`。新建工程写入 `hybrid`。保存时兼容字段 `physicsEnabled` 对应模式是否启用，只有 `none` 为 `false`。载入时接受单独的模式字段，两字段同时存在时须一致。只带旧开关的工程按 `true → quartz`、`false → none` 迁移。更早的工程若缺少整组全局设置，则读取旧手毬对象的开关，缺省为关闭。[工程校验](../../apps/desktop/electron/project-store.js) · [设置与快照](../../apps/desktop/ui/app.js)
+
+工作台按同一工程快照驱动预览与导出。宿主通过 Player 随附的 `creator-physics-modes-v1` 标记识别四种模式。切换模式时，每个角色实例重新初始化自己的求解历史，在暂停的同一帧也会应用新选择。[模式与兼容请求](../../apps/desktop/ui/render-settings.js) · [时间轴步进](../../unity/CreatorPlayer/Assets/Runtime/ActorPhysicsPlayback.cs)
+
+GSS 用经典骨链求解二次运动。Quartz 先根据当前服装或发型的模型驱动更新锚点，再按演出时钟以 60 Hz 积分，应用模型提供的各轴限位与横向连接。Hybrid 沿用这一步，在被识别为前发和鬓角的骨段上分别使用 12° 和 22° 的局部软限幅，同时修正发梢的位置历史。额头接触精查以 15 Hz 为目标，中间帧复用每束发丝的修正权重。姿势、位置或额头表面变化超过复用条件时，当帧重新检查。[模型驱动](../../unity/CreatorPlayer/Assets/Runtime/ActorQuartzPose.cs) · [骨链与限幅](../../unity/CreatorPlayer/Assets/Runtime/ActorClothPhysics.cs) · [额头接触](../../unity/CreatorPlayer/Assets/Runtime/FringeFaceContact.cs)
+
 ## 界面布局与任务进度（2026-11-15）
 
 基础控件在 controls.css，共享资产组件在 asset-settings.css，向导和工作台分别使用 setup-wizard.css 与 layout-responsive.css。向导固定顶部步骤和底部操作，中央独立滚动；工作台按实际工具栏高度分配空间，停靠面板有最小可用尺寸，空间不足时工作区可滚动。表单高度按字体行高和内边距计算，避免 CJK 文字被固定高度裁切。
