@@ -15,8 +15,25 @@
   s.tracks=[...ordered,...s.tracks.filter(t=>!visual(t))];return s;
  }
  function tracks(s){return s.tracks.filter(visual);}
- function reconcile(s,before){if(s.compositionVersion!==1)return;
-  const old=new Set(before.tracks.map(t=>t.id)),added=s.tracks.filter(t=>visual(t)&&!old.has(t.id));
+ function placeMediaTrack(s,track,anchor){
+  if(anchor&&!s.tracks.includes(anchor))throw Error('目标轨道已改变，请重新拖入');
+  // Raw track order also drives compositing. Remember the row for the two grouped timeline views.
+  if(anchor?.timelineAnchor)track.timelineAnchor=anchor.timelineAnchor;
+  else if(anchor&&(s.compositionVersion===1?!visual(anchor):anchor.type!=='media'))track.timelineAnchor=anchor.id;
+  const above=anchor||s.tracks.find(t=>t.type==='world');
+  s.tracks.splice(above?s.tracks.indexOf(above):s.tracks.length,0,track);
+ }
+ function reorder(s,from,to,swap=false){
+  const a=s.tracks.indexOf(from),b=s.tracks.indexOf(to);
+  if(a<0||b<0||a===b)return;
+  const setAnchor=(t,id)=>{if(t.type==='media'){if(id)t.timelineAnchor=id;else delete t.timelineAnchor;}};
+  const previous=from.timelineAnchor;
+  setAnchor(from,to.timelineAnchor);
+  if(swap){setAnchor(to,previous);[s.tracks[a],s.tracks[b]]=[to,from];}
+  else{s.tracks.splice(a,1);s.tracks.splice(b,0,from);}
+ }
+ function reconcile(s,before,positioned=[]){if(s.compositionVersion!==1)return;
+  const old=new Set(before.tracks.map(t=>t.id)),added=s.tracks.filter(t=>visual(t)&&!old.has(t.id)&&!positioned.includes(t.id));
   if(added.length)s.tracks=[...added,...s.tracks.filter(t=>!added.includes(t))];
   s.transitions=(s.transitions||[]).filter(x=>{const j=join(s,x);return j&&x.duration<=2*Math.min(j.a.len,j.b.len);});
   const ids=new Set(s.tracks.filter(t=>['media','dialogue','ui'].includes(t.type)).flatMap(t=>t.clips.map(c=>c.id)));
@@ -53,5 +70,5 @@
   }
   fail(nodes.length<=256,'同时合成的图层过多');return {version:1,time,nodes};
  }
- return {layout,layoutDefaults,visual,processing,tracks,initialize,reconcile,validate,join,transitionAt,mediaSamples,packet};
+ return {layout,layoutDefaults,visual,processing,tracks,initialize,placeMediaTrack,reorder,reconcile,validate,join,transitionAt,mediaSamples,packet};
 });

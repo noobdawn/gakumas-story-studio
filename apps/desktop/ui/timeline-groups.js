@@ -27,7 +27,13 @@
       return target?actorPerson(target):shared;
     }
     const people=new Map(),others=new Map();
+    const above=new Map(),anchored=new Set(),ids=new Set(state.tracks.filter(t=>t.type!=='media').map(t=>t.id));
+    for(const t of state.tracks)if(t.type==='media'&&t.timelineAnchor&&ids.has(t.timelineAnchor)){
+      if(!above.has(t.timelineAnchor))above.set(t.timelineAnchor,[]);
+      above.get(t.timelineAnchor).push(t);anchored.add(t);
+    }
     for(const track of state.tracks){
+      if(anchored.has(track))continue;
       if(state.compositionVersion===1&&['world','media','dialogue','ui','visualFilter','visualEffect'].includes(track.type))continue;
       if(!types.includes(track.type)){
         const key=Object.hasOwn(otherLabels,track.type)?track.type:'other';
@@ -54,8 +60,16 @@
       const children=ordered.filter(person=>person.byType.has(type)).map(person=>leaf(person,type));
       return {key:'type:'+type,title:labels[type],children,tracks:children.flatMap(c=>c.tracks)};
     }).filter(group=>group.tracks.length);
-    return [...(state.compositionVersion===1?[{key:'composition',title:'画面合成 · 上层在前',tracks:state.tracks.filter(t=>['world','media','dialogue','ui','visualFilter','visualEffect'].includes(t.type))}]:[]),...['visualEffect','media','camera','scene'].map(key=>others.get(key)).filter(Boolean),...grouped,
+    const composition=state.tracks.filter(t=>!anchored.has(t)&&['world','media','dialogue','ui','visualFilter','visualEffect'].includes(t.type));
+    const groups=[...(state.compositionVersion===1&&composition.length?[{key:'composition',title:'画面合成 · 上层在前',tracks:composition}]:[]),...['visualEffect','media','camera','scene'].map(key=>others.get(key)).filter(Boolean),...grouped,
       ...['transform','ui','post','other'].map(key=>others.get(key)).filter(Boolean)];
+    function attach(group){
+      if(group.children)group.tracks=group.children.flatMap(attach);
+      else group.tracks=group.tracks.flatMap(t=>[...(above.get(t.id)||[]),t]);
+      return group.tracks;
+    }
+    if(above.size)groups.forEach(attach);
+    return groups;
   }
   function flatten(groups,collapsed,known){
     const rows=[];

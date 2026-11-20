@@ -13,6 +13,15 @@
   }
   function unlocked(items){if(items.some(r=>r.track.locked))throw Error('相关轨道已锁定，请先解锁后再整体编辑');}
   function prune(s){
+    const empty=s.tracks.filter(t=>t.type!=='world'&&!t.clips.length);
+    if(empty.length){
+      const removed=new Set(empty);
+      s.tracks=s.tracks.filter(t=>!removed.has(t));
+      // An enabled empty scene lane used to suppress the legacy background for the whole timeline.
+      if(empty.some(t=>t.type==='scene'&&t.enabled!==false)&&!s.tracks.some(t=>t.type==='scene'&&t.enabled!==false))s.sceneId=null;
+    }
+    const anchors=new Set(s.tracks.filter(t=>t.type!=='media').map(t=>t.id));
+    for(const t of s.tracks)if(t.timelineAnchor&&(t.type!=='media'||!anchors.has(t.timelineAnchor)))delete t.timelineAnchor;
     if(!s.clipGroups)return;const counts=new Map();for(const {clip} of rows(s))if(clip.groupId)counts.set(clip.groupId,(counts.get(clip.groupId)||0)+1);
     s.clipGroups=s.clipGroups.filter(g=>(counts.get(g.id)||0)>1);const ids=new Set(s.clipGroups.map(g=>g.id));for(const {clip} of rows(s))if(clip.groupId&&!ids.has(clip.groupId))delete clip.groupId;
   }
@@ -36,8 +45,45 @@
   function validLips(s,env){const all=rows(s);return new Set(all.filter(({clip:c})=>{if(!c.lipSyncSource)return false;const a=all.find(r=>r.clip.id===c.lipSyncSource.audioClipId),d=a&&s.dialogues.find(d=>d.id===a.clip.dialogue);return a&&d&&c.start===a.clip.start&&c.len===a.clip.len&&c.lipSyncSource.signature===env.signature(a.track,a.clip,d);}).map(r=>r.clip.id));}
   function refreshLips(s,items,env,valid){for(const {clip} of items)if(clip.lipSyncSource&&valid.has(clip.id)){const source=rows(s).find(r=>r.clip.id===clip.lipSyncSource.audioClipId),d=source&&s.dialogues.find(d=>d.id===source.clip.dialogue);if(source&&d)clip.lipSyncSource.signature=env.signature(source.track,source.clip,d);}}
   function move(s,ids,delta,env,groups=true){const items=expand(s,ids,groups);story.assertFree(s,items.map(r=>r.clip.id));if(!items.length)throw Error('请选择片段');const valid=validLips(s,env),proposed=items.map(r=>({track:r.track,clip:{...r.clip,start:env.q(r.clip.start+delta)}}));checkPlacement(s,proposed,new Set(items.map(r=>r.clip.id)),env.duration);for(let i=0;i<items.length;i++)items[i].clip.start=proposed[i].clip.start;refreshLips(s,items,env,valid);return items.map(r=>r.clip.id);}
-  function copy(s,ids,groups=true){const items=expand(s,ids,groups),script=story.copy(s,items.map(r=>r.clip.id));if(script)return script;if(!items.length)throw Error('请选择要复制的片段');const ds=new Set(items.map(r=>r.clip.dialogue).filter(Boolean)),gs=new Set(items.map(r=>r.clip.groupId).filter(Boolean));return structuredClone({projectId:s.projectId,start:Math.min(...items.map(r=>r.clip.start)),items:items.map(r=>({trackId:r.track.id,clip:r.clip})),dialogues:s.dialogues.filter(d=>ds.has(d.id)),groups:(s.clipGroups||[]).filter(g=>gs.has(g.id)),...(s.compositionVersion===1?{transitions:(s.transitions||[]).filter(x=>items.some(r=>r.clip.id===x.leftId)&&items.some(r=>r.clip.id===x.rightId))}:{})});}
-  function paste(s,clipboard,at,env){if(!clipboard)throw Error('请先复制片段');if(clipboard.storyUnits)return story.paste(s,clipboard,at,env.id);if(clipboard.projectId!==s.projectId)throw Error('请在当前工程重新复制片段');const delta=env.q(at)-clipboard.start,items=clipboard.items.map(r=>({track:s.tracks.find(t=>t.id===r.trackId),clip:structuredClone(r.clip)}));if(items.some(r=>!r.track))throw Error('原轨道已移除，请重新复制');for(const r of items)r.clip.start=env.q(r.clip.start+delta);checkPlacement(s,items,new Set(),env.duration);
+  function copy(s,ids,groups=true){
+    const items=expand(s,ids,groups);
+    if(!items.length)throw Error('请选择要复制的片段');
+    const selected=new Set(items.map(r=>r.clip.id));
+    const ds=new Set(items.map(r=>r.clip.dialogue)),gs=new Set(items.map(r=>r.clip.groupId));
+    const data=story.copy(s,[...selected])||{
+      projectId:s.projectId,start:Math.min(...items.map(r=>r.clip.start)),items:items.map(r=>({trackId:r.track.id,clip:r.clip})),
+      dialogues:s.dialogues.filter(d=>ds.has(d.id)),groups:(s.clipGroups||[]).filter(g=>gs.has(g.id)),
+      ...(s.compositionVersion===1?{transitions:(s.transitions||[]).filter(x=>selected.has(x.leftId)&&selected.has(x.rightId))}:{})
+    };
+    const needed=new Set(data.items.map(r=>r.trackId));
+    data.trackSettings=s.tracks.filter(t=>needed.has(t.id)).map(({clips,...settings})=>settings);
+    data.trackOrder=s.tracks.map(t=>t.id);
+    return structuredClone(data);
+  }
+  function paste(s,clipboard,at,env){
+    if(!clipboard)throw Error('请先复制片段');
+    if(clipboard.projectId!==s.projectId)throw Error('请在当前工程重新复制片段');
+    const existing=new Set(s.tracks.map(t=>t.id)),missing=(clipboard.trackSettings||[]).filter(t=>!existing.has(t.id));
+    if(!missing.length)return pasteContents(s,clipboard,at,env);
+    const draft=structuredClone(s),data=structuredClone(clipboard);
+    for(const settings of missing){
+      if(draft.objects&&!draft.objects.some(o=>o.id===settings.target))throw Error('片段所属对象已移除，请重新复制');
+      // A media object or actor base layer can only have one track of its kind.
+      const replacement=draft.tracks.find(t=>t.target===settings.target&&t.type===settings.type
+        &&(t.type==='media'||t.layerRole==='base'&&settings.layerRole==='base'));
+      if(replacement){
+        for(const row of data.items)if(row.trackId===settings.id)row.trackId=replacement.id;
+        for(const seam of data.transitions||[])if(seam.trackId===settings.id)seam.trackId=replacement.id;
+      }else{
+        const next=data.trackOrder.slice(data.trackOrder.indexOf(settings.id)+1).find(id=>existing.has(id));
+        const index=next?draft.tracks.findIndex(t=>t.id===next):draft.tracks.length;
+        draft.tracks.splice(index,0,{...settings,clips:[]});existing.add(settings.id);
+      }
+    }
+    const result=pasteContents(draft,data,at,env);
+    Object.assign(s,draft);return result;
+  }
+  function pasteContents(s,clipboard,at,env){if(clipboard.storyUnits)return story.paste(s,clipboard,at,env.id);const delta=env.q(at)-clipboard.start,items=clipboard.items.map(r=>({track:s.tracks.find(t=>t.id===r.trackId),clip:structuredClone(r.clip)}));if(items.some(r=>!r.track))throw Error('原轨道已移除，请重新复制');for(const r of items)r.clip.start=env.q(r.clip.start+delta);checkPlacement(s,items,new Set(),env.duration);
     const valid=validLips({dialogues:clipboard.dialogues,tracks:s.tracks.map(t=>({...t,clips:clipboard.items.filter(r=>r.trackId===t.id).map(r=>r.clip)}))},env),ids=new Map(items.map(r=>[r.clip.id,env.id()])),ds=new Map(clipboard.dialogues.map(d=>[d.id,env.id()])),gs=new Map(clipboard.groups.map(g=>[g.id,env.id()])),links=new Map();
     for(const {clip:c} of items){c.id=ids.get(c.id);delete c.storyTiming;if(c.visualEffect?.scope==='clips')c.visualEffect.clipIds=c.visualEffect.clipIds.map(id=>ids.get(id)||id);if(c.dialogue)c.dialogue=ds.get(c.dialogue);if(c.groupId)c.groupId=gs.get(c.groupId);if(c.mediaLink){if(!links.has(c.mediaLink))links.set(c.mediaLink,env.id());c.mediaLink=links.get(c.mediaLink);}if(c.lipSyncSource){const audio=ids.get(c.lipSyncSource.audioClipId);if(!audio)throw Error('关联音频缺失，请重新复制');c.lipSyncSource.audioClipId=audio;}}
     s.dialogues.push(...clipboard.dialogues.map(d=>({...structuredClone(d),id:ds.get(d.id)})));if(gs.size)(s.clipGroups||=[]).push(...clipboard.groups.map(g=>({...g,id:gs.get(g.id)})));

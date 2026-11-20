@@ -138,7 +138,6 @@
       s.objects.find(o=>o.id==='cam').transform.position=[-1,1,3];
       if(faces)s.assets.push({id:'asset-local-mouth',type:'表情',alias:'嘴部张合（研究）',source:'b_mouth.mouth_001'});
       s.assets.push({id:'asset-local-shy',type:'动作',alias:'害羞（本地样本）',source:'mot_all_chr_ttmr_tereru-002_in_b'});
-      s.tracks.push({id:'t-local-motion',name:'月村 · 本地身体动作',type:'animation',target:'ttmr',clips:[]});
     }
     CreatorComposition.initialize(s,id);return s;
   }
@@ -157,7 +156,7 @@
   for(const track of state.tracks)if(track.type==='camera')for(const clip of track.clips){if(clip.keyframes?.length){clip.propertyKeys ||= {};clip.propertyKeys.fov ||= clip.keyframes;delete clip.keyframes;}}
   const exampleAssets=[{id:'demo-scene-room',type:'场景',alias:'',source:'练习室'},{id:'demo-texture-face',type:'贴图',alias:'手毬 · 脸部',source:'t_chr_ttmr-base-0000_fce_col',thumbnail:'../three-probe/local-assets/lookdev/t_chr_ttmr-base-0000_fce_col.png'},{id:'demo-texture-hair',type:'贴图',alias:'',source:'t_chr_ttmr-base-0000_hir_col_alp',thumbnail:'../three-probe/local-assets/lookdev/t_chr_ttmr-base-0000_hir_col_alp.png'}];
   if(!desktop)for(const a of exampleAssets)if(!state.assets.some(x=>x.id===a.id))state.assets.push(a);
-  function normalizeState(s) { s.story ||=CreatorStory.blank();CreatorStory.validate(s); if(!s.projectId)s.projectId=id(); if(s.sceneId===undefined)s.sceneId=performance?'trainingroom':null; if(!s.globalSettings) s.globalSettings={outlineEnabled:true,outlineWidth:0.15,physicsEnabled:s.objects.find(o=>o.id==='ttmr')?.physicsEnabled===true}; Object.assign(s.globalSettings,CreatorRenderSettings.physicsSettings(CreatorRenderSettings.physicsMode(s.globalSettings))); s.globalSettings.duration ??=30;s.globalSettings.fps ??=30;s.globalSettings.aspect ??='16:9';s.globalSettings.render=CreatorRenderSettings.normalize(s.globalSettings.render); if(animationLayersSupported)CreatorAnimationLayers.normalize(s,id);CreatorUITransitions.migrate(s,id);CreatorPostEffects.validate(s);CreatorComposition.validate(s);return s; }
+  function normalizeState(s) { s.story ||=CreatorStory.blank();CreatorStory.validate(s); if(!s.projectId)s.projectId=id(); if(s.sceneId===undefined)s.sceneId=performance?'trainingroom':null; if(!s.globalSettings) s.globalSettings={outlineEnabled:true,outlineWidth:0.15,physicsEnabled:s.objects.find(o=>o.id==='ttmr')?.physicsEnabled===true}; Object.assign(s.globalSettings,CreatorRenderSettings.physicsSettings(CreatorRenderSettings.physicsMode(s.globalSettings))); s.globalSettings.duration ??=30;s.globalSettings.fps ??=30;s.globalSettings.aspect ??='16:9';s.globalSettings.render=CreatorRenderSettings.normalize(s.globalSettings.render); if(animationLayersSupported)CreatorAnimationLayers.normalize(s,id);CreatorUITransitions.migrate(s,id);CreatorTimelineEdit.prune(s);CreatorPostEffects.validate(s);CreatorComposition.validate(s);return s; }
   function syncTiming(){duration=state.globalSettings.duration;fps=state.globalSettings.fps;frame=1/fps;$('.viewport').style.aspectRatio=state.globalSettings.aspect.replace(':',' / ');$('.time-total').textContent='/ '+time(duration);}
   normalizeState(state);
   const layerUI=CreatorAnimationLayerUI({state:()=>state,id,esc,assets:()=>allAssets(),name:key=>assetDisplay(assetById(key)||motionDefinition(key)||faceMotionById(key)||faceShapeDefinition(key)||{source:'素材缺失：'+key}),motion:motionDefinition,face:faceMotionById,shape:faceShapeDefinition,layered:animationLayersSupported,actorSupported:supportedActor,prepare:prepareFaceMotion,supports:(o,name)=>!!shapeForActor(o,faceIdForName(name)),remember,render,notify:message=>notify(message),showModal,closeModal,manageResident,revealClip:revealExpressionClip,fps:()=>fps,duration:()=>duration,selectClip:key=>{state.selected=null;state.selectedClip=key;selectedAsset=null;}});
@@ -191,11 +190,11 @@
   const uiReady=Promise.resolve().then(async()=>{if(!uiTransitionsSupported)return;try{const response=await fetch('/'+location.pathname.split('/')[1]+'/ui-transitions');if(!response.ok)throw Error('转场清单读取失败');uiCatalog=await response.json();uiCatalogError=uiCatalog.issues?.map(x=>x.error).join('；')||'';assetCatalogRevision++;renderAssetBrowser();renderTimeline();renderInspector();updateClock();}catch(x){uiCatalogError=x.message;}});
   function uiPlan(){if(!uiTransitionsSupported&&state.tracks.some(t=>t.type==='ui'&&t.enabled!==false&&t.clips.length))throw Error('此工程使用 UI / 转场，请重启到新版 Player');return CreatorUITransitions.plan(state,uiCatalog.entries,sceneAssets);}
   function uiCoverMarkup(c){const original=uiCatalog.entries.find(a=>a.id===c.assetId);if(c.uiKind!=='transition'||!original)return '';let asset;try{asset=CreatorUITransitions.layout(original,uiCatalog.entries,uiAspect());}catch{return '';}const v=CreatorUITransitions.covered(c,asset);return `<i class="ui-cover-window" style="left:${(v.start-c.start)/c.len*100}%;width:${(v.end-v.start)/c.len*100}%" title="遮挡参考区间"></i>`;}
-  document.addEventListener('click',event=>{const layer=event.target.closest('[data-ui-layer-add]');if(layer){const before=copyState();uiEditor.addTrack();remember(before);collapsedTimelineGroups.set('ui',false);render();return;}const add=event.target.closest('[data-ui-add]');if(add&&!add.disabled)uiEditor.picker(state.tracks.find(t=>t.id===add.dataset.uiAdd));});
-  document.addEventListener('click',event=>{const button=event.target.closest('[data-layer-add]');if(!button)return;const [type,target]=button.dataset.layerAdd.split(':'),actor=state.objects.find(o=>o.id===target);if(!actor)return;const before=copyState();layerUI.addTrack(actor,type);remember(before);render();});
+  document.addEventListener('click',event=>{const layer=event.target.closest('[data-ui-layer-add]');if(layer){uiEditor.picker(null,null,state.current,true);return;}const add=event.target.closest('[data-ui-add]');if(add&&!add.disabled)uiEditor.picker(state.tracks.find(t=>t.id===add.dataset.uiAdd));});
+  document.addEventListener('click',event=>{const button=event.target.closest('[data-layer-add]');if(!button)return;const [type,target]=button.dataset.layerAdd.split(':'),actor=state.objects.find(o=>o.id===target);if(actor)openLayerPicker(actor,null,type,true);});
 
   const effectsEditor=CreatorPostEffectsEditor({state:()=>state,id,esc,copy:()=>copyState(),restore:s=>{state=s;render();},remember,render,notify:msg=>notify(msg),modal:showModal,close:closeModal,duration:()=>duration,fps:()=>fps,found:()=>state.selectedClip&&getClip(state.selectedClip),select:key=>{state.selected=null;state.selectedClip=key;selectedAsset=null;collapsedTimelineGroups.set('visualEffect',false);}});
-  document.addEventListener('click',e=>{const b=e.target.closest('[data-effect-add],[data-effect-layer-add]');if(!b)return;if(b.hasAttribute('data-effect-layer-add'))effectsEditor.addTrack();else effectsEditor.picker('visual',state.tracks.find(t=>t.id===b.dataset.effectAdd));});
+  document.addEventListener('click',e=>{const b=e.target.closest('[data-effect-add],[data-effect-layer-add]');if(!b)return;if(b.hasAttribute('data-effect-layer-add'))effectsEditor.picker('effect');else effectsEditor.picker('visual',state.tracks.find(t=>t.id===b.dataset.effectAdd));});
   const obj = () => state.objects.find(x=>x.id===state.selected) || null;
   const getClip = clipId => { for(const track of state.tracks){const clip=track.clips.find(c=>c.id===clipId);if(clip)return {track,clip};} return null; };
   const comp = type => components.find(c=>c.key===type) || components[0];
@@ -209,7 +208,7 @@
   const missingIdle = () => idleSupported&&performance?state.objects.find(o=>supportedActor(o)&&!idleDefinition(o)):null;
   const clipActive = c => state.current>=c.start && (state.current<c.start+c.len || (state.current===duration && Math.abs(c.start+c.len-duration)<1e-6));
   const copyState = () => structuredClone(state);
-  function remember(before){CreatorStory.rebase(state,before);CreatorComposition.reconcile(state,before);CreatorTimelineEdit.prune(state);assetCatalogRevision++;undoStack.push(before);if(undoStack.length>50)undoStack.shift();redoStack.length=0;updateHistoryButtons();scheduleProjectLabel();}
+  function remember(before,positioned=[]){CreatorStory.rebase(state,before);CreatorTimelineEdit.prune(state);CreatorComposition.reconcile(state,before,positioned);assetCatalogRevision++;undoStack.push(before);if(undoStack.length>50)undoStack.shift();redoStack.length=0;updateHistoryButtons();scheduleProjectLabel();}
   function updateHistoryButtons(){$('#undo').disabled=undoStack.length===0;$('#redo').disabled=redoStack.length===0;}
   function historyUndo(){finishGizmoEdit();if(!undoStack.length)return;redoStack.push(copyState());state=undoStack.pop();clearPanelSelections();selectedClipIds.clear();soloClipId=null;selectedAsset=null;render();updateHistoryButtons();scheduleProjectLabel();notify('已撤销时间轴编辑');}
   function historyRedo(){finishGizmoEdit();if(!redoStack.length)return;undoStack.push(copyState());state=redoStack.pop();clearPanelSelections();selectedClipIds.clear();soloClipId=null;selectedAsset=null;render();updateHistoryButtons();scheduleProjectLabel();notify('已重做时间轴编辑');}
@@ -334,7 +333,15 @@
   function attachAudioRecovery(asset){if(!asset?.scope||!['音乐','音效'].includes(asset.type)||!assetIssues[asset.id]||!window.assetAPI?.restoreAudio)return;const section=$('#inspector .inspector-section');if(!section)return;const hint=document.createElement('p');hint.className='hint';hint.textContent='请选择原音频的同格式副本；不会自动核对内容是否一致。';section.appendChild(hint);const button=document.createElement('button');button.className='add-component';button.textContent='重新关联缺失音频';button.onclick=async()=>{button.disabled=true;try{const result=await window.assetAPI.restoreAudio(asset);if(!result){button.disabled=false;return;}delete asset.available;delete assetIssues[asset.id];for(const [key,entry] of audioPlayers)if(entry.assetId===asset.id)retireAudioPlayer(key,entry);renderAssetBrowser();renderInspector();notify('音频已恢复，时间轴引用保持不变');}catch(error){button.disabled=false;notify('重新关联失败：'+error.message);}};section.appendChild(button);}
   window.assetAPI?.onImportProgress?.(info=>notify(`正在准备 ${info.index} / ${info.total}：${info.name}，视频可能需要几分钟…`));
   async function importResult(result){if(!result)return;const before=copyState();for(const a of result.assets){if(a.scope==='shared')sharedAssets.push(a);else state.assets.push(a);loadAssetPreview(a);}if(result.assets.some(a=>a.scope==='project'))remember(before);renderAssetBrowser();if(result.errors.length)notify(`导入 ${result.assets.length} 项，${result.errors.length} 项失败：${result.errors[0].name}（${result.errors[0].error}）`);else notify(`已导入 ${result.assets.length} 项素材`);}
-  async function importFiles(files){try{const paths=Array.from(files,file=>window.assetAPI.pathForFile(file));await importResult(await window.assetAPI.importDropped(paths,state.projectId));}catch(error){notify('导入失败：'+error.message);}}
+  async function importFiles(files){
+    const original=state;
+    try{
+      const paths=Array.from(files,file=>window.assetAPI.pathForFile(file));
+      const result=await window.assetAPI.importDropped(paths,original.projectId);
+      if(state!==original)throw Error('工程已切换，请在需要的工程中重新拖入');
+      await importResult(result);return result?.assets||[];
+    }catch(error){notify('导入失败：'+error.message);return [];}
+  }
   async function bakeThumbnail(a){if(!assetFeatures||!a)return;const target=a.id==='asset-actor-1'?'actor':a.sceneId===state.sceneId?'scene':null;if(!target){notify('请先把该场景放入层级，再拍摄缩略图');return;}try{const prefix=location.pathname.split('/')[1],r=await fetch('/'+prefix+'/thumbnail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,id:++bridgeId})}),data=await r.json();if(!r.ok||!data.ok)throw Error(data.error||'拍摄失败');await window.assetAPI.saveThumbnail(a.id,data.dataUrl);assetThumbs[a.id]=data.dataUrl;renderAssetBrowser();notify('已生成 Player 缩略图');}catch(error){notify('缩略图生成失败：'+error.message);}}
 
   const assetIcons={'角色':'user','服装':'user','动作':'film','表情':'spark','音源':'sound','音效':'music','音乐':'music','UI':'chat','场景':'box','贴图':'image','视频':'film'};
@@ -394,7 +401,7 @@
   function unsupportedScale(){if(gizmoTrsSupported)return false;const changed=v=>Array.isArray(v)&&v.some(x=>Math.abs(x-1)>1e-6);return state.objects.some(o=>changed(o.transform?.scale))||state.tracks.some(t=>t.clips.some(c=>c.propertyKeys?.scale?.some(k=>changed(k.value))));}
   const mediaSupported=new URLSearchParams(location.search).get('screenMedia')==='1';
   const compositionEditor=CreatorCompositionEditor({state:()=>state,copy:copyState,remember,render,notify,esc,id,asset:assetById,modal:showModal,close:closeModal,found:()=>state.selectedClip&&getClip(state.selectedClip),fps:()=>fps,duration:()=>duration});
-  const mediaEditor=CreatorScreenMediaEditor.create({supported:()=>mediaSupported,state:()=>state,restore:s=>{state=s;render();},copy:copyState,remember,render,inspector:renderInspector,sync:updateClock,notify,esc,id,asset:assetById,assets:allAssets,label:assetDisplay,rename:renameAsset,quantize,duration:()=>duration,frame:()=>frame,aspect:uiAspect,dimensions:()=>videoDimensions(state.globalSettings.exportQuality),playing:()=>playing,getClip,related:relatedClips,object:obj,found:()=>state.selectedClip&&getClip(state.selectedClip),pickSource:pickClipSource,selectClip:clipId=>{selectedClipIds.clear();state.selectedClip=clipId;state.selected=null;selectedAsset=null;},selectObject,modal:showModal,close:closeModal,timeline:()=>setBottomTab('timeline')});
+  const mediaEditor=CreatorScreenMediaEditor.create({supported:()=>mediaSupported,state:()=>state,restore:s=>{state=s;render();},copy:copyState,remember,render,inspector:renderInspector,sync:updateClock,notify,esc,id,asset:assetById,assets:allAssets,label:assetDisplay,rename:renameAsset,quantize,duration:()=>duration,frame:()=>frame,aspect:uiAspect,dimensions:()=>videoDimensions(state.globalSettings.exportQuality),playing:()=>playing,getClip,related:relatedClips,object:obj,found:()=>state.selectedClip&&getClip(state.selectedClip),pickSource:pickClipSource,selectClip:clipId=>{selectedClipIds.clear();state.selectedClip=clipId;state.selected=null;selectedAsset=null;},selectObject,modal:showModal,close:closeModal,timeline:trackId=>{revealTimelineTrack(trackId);setBottomTab('timeline');}});
   function playerSnapshot() {
     if(state.compositionVersion===1&&new URLSearchParams(location.search).get('composition')!=='1')throw Error('图层合成需要新版 Player，请保存并重启');
     if(CreatorPostEffects.packet(state,state.current).enabled&&new URLSearchParams(location.search).get('postEffects')!=='1')throw Error('画面效果需要新版 Player，请保存并重启创作器');
@@ -489,12 +496,15 @@
   function revealTimelineTrack(trackId){CreatorTimelineGroups.reveal(timelineGroups(),trackId,collapsedTimelineGroups);}
   function updateTimelineGroupingButton(){const button=$('#timeline-grouping'),current=timelineGrouping==='person'?'按人物':'按类别',next=timelineGrouping==='person'?'按类别':'按人物';button.textContent='分类：'+current;button.title='当前'+current+'分组；点击切换为'+next;button.setAttribute('aria-label',button.title);button.setAttribute('aria-pressed',String(timelineGrouping==='person'));}
   $('#timeline-grouping').onclick=()=>{if(timelineEditBusy||drag||marquee||trackWidthDrag)return;timelineGrouping=timelineGrouping==='person'?'type':'person';try{localStorage.setItem('creator-timeline-grouping-v1',timelineGrouping);}catch(_){}renderTimeline();$('.timeline-scroll').scrollTop=0;updateClock();};
-  function timelineTrackPeers(track){return CreatorTimelineGroups.peers(timelineGroups(),track.id);}
+  function timelineTrackPeers(track){
+    if(state.compositionVersion===1&&CreatorComposition.visual(track))return CreatorComposition.tracks(state);
+    return CreatorTimelineGroups.peers(timelineGroups(),track.id).filter(t=>t.type===track.type);
+  }
   function buildTimelineRows(){
     const rows=CreatorTimelineGroups.flatten(timelineGroups(),collapsedTimelineGroups,knownTimelineTracks);
     knownTimelineTracks=new Set(state.tracks.map(t=>t.id));return rows;
   }
-  function groupRowMarkup(row){const title=row.title;return `<div class="track-row timeline-group ${row.children?'timeline-parent':''}" data-track-group="${esc(row.key)}" style="--timeline-depth:${row.depth}"><div class="track-name group-name"><button class="group-toggle" data-group-toggle="${esc(row.key)}" aria-expanded="${!row.collapsed}" aria-label="展开或折叠 ${esc(title)}">${row.collapsed?'▸':'▾'}</button><span class="group-title" title="${esc(title)}">${esc(title)}</span><span class="group-count">${row.tracks.length}</span>${row.layerAction&&animationLayersSupported?`<button class="track-control" data-layer-resident="${esc(row.layerAction)}" title="常驻设置" aria-label="常驻设置">⚙</button><button class="track-control" data-layer-add="${esc(row.layerAction)}" title="添加空叠加层" aria-label="添加空叠加层">＋</button>`:row.key==='ui'?'<button class="track-control" data-ui-layer-add title="添加 UI 子轨道">＋</button>':row.key==='visualEffect'?'<button class="track-control" data-effect-layer-add title="添加画面效果轨道">＋</button>':''}<span class="track-width-row-handle" data-track-resize aria-hidden="true"></span></div><div class="track-lane timeline-group-lane"><div class="playhead" style="left:${state.current/duration*100}%"></div></div></div>`;}
+  function groupRowMarkup(row){const title=row.title;return `<div class="track-row timeline-group ${row.children?'timeline-parent':''}" data-track-group="${esc(row.key)}" style="--timeline-depth:${row.depth}"><div class="track-name group-name"><button class="group-toggle" data-group-toggle="${esc(row.key)}" aria-expanded="${!row.collapsed}" aria-label="展开或折叠 ${esc(title)}">${row.collapsed?'▸':'▾'}</button><span class="group-title" title="${esc(title)}">${esc(title)}</span><span class="group-count">${row.tracks.length}</span>${row.layerAction&&animationLayersSupported?`<button class="track-control" data-layer-resident="${esc(row.layerAction)}" title="常驻设置" aria-label="常驻设置">⚙</button><button class="track-control" data-layer-add="${esc(row.layerAction)}" title="添加叠加片段" aria-label="添加叠加片段">＋</button>`:row.key==='ui'?'<button class="track-control" data-ui-layer-add title="添加 UI 子轨道">＋</button>':row.key==='visualEffect'?'<button class="track-control" data-effect-layer-add title="添加画面效果轨道">＋</button>':''}<span class="track-width-row-handle" data-track-resize aria-hidden="true"></span></div><div class="track-lane timeline-group-lane"><div class="playhead" style="left:${state.current/duration*100}%"></div></div></div>`;}
   var marquee=null,marqueeScrollFrame=0;
   function renderTimeline(preserveMarquee=false){
     if(!preserveMarquee)cancelMarquee();
@@ -969,19 +979,40 @@
   function componentTarget(){const direct=obj();if(direct)return direct;const selected=state.selectedClip&&getClip(state.selectedClip);if(selected)return state.objects.find(o=>o.id===selected.track.target)||null;const actors=state.objects.filter(supportedActor);return actors.length===1?actors[0]:null;}
   function manageResident(actor){if(!state.objects.includes(actor))return;selectObject(actor.id);$('#resident-add')?.scrollIntoView({block:'center'});}
   function revealExpressionClip(clipId){const found=getClip(clipId);if(!found)return;revealTimelineTrack(found.track.id);setBottomTab('timeline');renderTimeline();const row=$(`#tracks [data-track="${CSS.escape(found.track.id)}"]`);row?.scrollIntoView({block:'center'});window.CreatorPanelLayout?.activate('inspector');}
-  async function openExpressionPicker(actor,track){
-    if(!supportedActor(actor)){notify('请先选择要添加表情的角色');return;}
-    setPlaying(false);const initial=state;await faceMotionReady;
-    if(initial!==state||!state.objects.includes(actor)){notify('工程或角色已改变，请重新添加表情');return;}
+  async function openLayerPicker(actor,track,type='expression',newLayer=false){
+    if(!supportedActor(actor)){notify('请先选择要添加片段的角色');return;}
+    setPlaying(false);const initial=state;await (type==='animation'?filmMotionReady:faceMotionReady);
+    if(initial!==state||!state.objects.includes(actor)){notify('工程或角色已改变，请重新添加片段');return;}
     if(track&&(track.locked||track.enabled===false)){notify('请先启用并解锁目标轨道');return;}
-    layerUI.openExpressionPicker(actor,track);
+    layerUI.openClipPicker(actor,track,type,newLayer);
   }
   document.addEventListener('click',event=>{
     const resident=event.target.closest('[data-layer-resident]');if(resident){const actor=state.objects.find(o=>o.id===resident.dataset.layerResident.split(':')[1]);if(actor)manageResident(actor);return;}
-    const add=event.target.closest('[data-expression-add]');if(add&&!add.disabled){const track=state.tracks.find(t=>t.id===add.dataset.expressionAdd),actor=track&&state.objects.find(o=>o.id===track.target);if(actor)openExpressionPicker(actor,track);}
+    const add=event.target.closest('[data-expression-add]');if(add&&!add.disabled){const track=state.tracks.find(t=>t.id===add.dataset.expressionAdd),actor=track&&state.objects.find(o=>o.id===track.target);if(actor)openLayerPicker(actor,track);}
   });
   function openComponentModal(){const o=componentTarget();showModal(`<div class="modal-head"><div><h2>添加内容</h2><p>${o?'为 '+esc(o.name)+' 添加演出内容':'选择要添加的演出内容'}</p></div><button class="icon-button" data-close aria-label="关闭">${icon('close')}</button></div><div class="modal-body"><div class="search-box modal-search">${icon('search')}<input id="component-search" placeholder="搜索组件类型" aria-label="搜索组件类型"><kbd>ESC</kbd></div><div class="component-list" id="component-list"></div><p class="hint">动作、表情和场景使用当前解包资源；换景使用场景轨道，剧情画面效果使用独立轨道；基础渲染在工程设置中调整。</p></div>`);const input=$('#component-search');const draw=()=>{$('#component-list').innerHTML=components.filter(x=>(o||['dialogue','ui','post','media','visualFilter','visualEffect'].includes(x.key))&&(x.name+x.desc).includes(input.value.trim())).map(x=>`<button class="component-option" data-component="${x.key}">${icon(x.icon)}<span><strong>${esc(x.name)}</strong><small>${esc(x.desc)}</small></span></button>`).join('')||'<p class="empty">没有找到对应组件</p>';};input.oninput=draw;draw();input.focus();}
-  function addComponent(key){if(key==='visualFilter'){effectsEditor.picker('filter');return;}if(key==='visualEffect'){effectsEditor.picker('effect');return;}if(key==='world'){if(state.tracks.some(t=>t.type==='world')){notify('演出画面已存在');return;}const before=copyState();state.tracks.push({id:id(),type:'world',name:'演出画面',target:'scene',clips:[]});remember(before);closeModal();render();return;}if(key==='media'){mediaEditor.picker();return;}if(key==='post'){openProjectSettings();selectSettingsPage('render');return;}if(key==='ui'){uiEditor.picker();return;}if(key==='dialogue'){openDialogueModal();return;}const o=componentTarget();if(!o)return;if(animationLayersSupported&&supportedActor(o)&&key==='expression'){openExpressionPicker(o);return;}if(animationLayersSupported&&supportedActor(o)&&['animation','expression'].includes(key)){const before=copyState();layerUI.addTrack(o,key);remember(before);closeModal();setBottomTab('timeline');render();return;}if(key==='scene'&&o.id!=='scene'){notify('请先选择场景对象');return;}const before=copyState(),c=comp(key);if(key==='expression'&&faces&&!state.assets.some(a=>a.id==='asset-local-mouth'))state.assets.push({id:'asset-local-mouth',type:'表情',alias:'嘴部张合（研究）',source:'b_mouth.mouth_001'});const len=Math.min(5,duration),start=Math.min(state.current,Math.max(0,duration-len));if(!o.components.includes(key))o.components.push(key);const clip={id:id(),name:key==='expression'?'微笑':c.name,start,len,...(key==='expression'?{weight:80,...(faces?{assetId:'asset-local-mouth',name:'嘴部张合（研究）'}:{})}:{})},trackId=id();state.tracks.push({id:trackId,name:`${o.name} · ${c.name}`,type:key,target:o.id,clips:['audio','scene','animation'].includes(key)?[]:[clip]});
+  function pickFirstTrackClip(object,type){
+    const component=comp(type),start=quantize(state.current),originalFps=fps,originalDuration=duration;
+    const scenes=new Set(sceneAssets.map(a=>a.sceneId));
+    const sources={
+      audio:{accept:a=>isAudioSource(a)&&a.available!==false&&!assetIssues[a.id],length:async a=>(await audioClipLength(a,start)).length},
+      scene:{accept:a=>scenes.has(a.sceneId),length:()=>3},
+      animation:{accept:a=>!!motionDefinition(a.id),length:a=>motionClipLength(motionDefinition(a.id))}
+    };
+    const source=sources[type];
+    pickClipSource(null,null,{key:'track-source',title:'添加'+component.name+'片段',context:object.name,
+      hint:'选择素材后，从 '+start.toFixed(2)+' 秒开始创建轨道和片段。',items:()=>allAssets().filter(source.accept),describe:a=>a.type,
+      prepare:source.length,apply:(a,length)=>{
+        if(!state.objects.includes(object)||fps!==originalFps||duration!==originalDuration)throw Error('对象或演出设置已改变，请重新添加');
+        const len=quantize(Math.min(length,duration-start));if(len<frame)throw Error('播放头之后没有足够的时间');
+        const clip={id:id(),name:assetDisplay(a),assetId:a.id,start,len};
+        const track={id:id(),name:object.name+' · '+component.name,type,target:object.id,clips:[clip]};
+        if(!object.components.includes(type))object.components.push(type);
+        state.tracks.push(track);state.selectedClip=clip.id;state.selected=null;selectedAsset=null;selectedClipIds.clear();
+        revealTimelineTrack(track.id);setBottomTab('timeline');
+      }});
+  }
+  function addComponent(key){if(key==='visualFilter'){effectsEditor.picker('filter');return;}if(key==='visualEffect'){effectsEditor.picker('effect');return;}if(key==='world'){if(state.tracks.some(t=>t.type==='world')){notify('演出画面已存在');return;}const before=copyState();state.tracks.push({id:id(),type:'world',name:'演出画面',target:'scene',clips:[]});remember(before);closeModal();render();return;}if(key==='media'){mediaEditor.picker();return;}if(key==='post'){openProjectSettings();selectSettingsPage('render');return;}if(key==='ui'){uiEditor.picker();return;}if(key==='dialogue'){openDialogueModal();return;}const o=componentTarget();if(!o)return;if(animationLayersSupported&&supportedActor(o)&&['animation','expression'].includes(key)){openLayerPicker(o,null,key);return;}if(key==='scene'&&o.id!=='scene'){notify('请先选择场景对象');return;}if(['audio','scene','animation'].includes(key)){pickFirstTrackClip(o,key);return;}const before=copyState(),c=comp(key);if(key==='expression'&&faces&&!state.assets.some(a=>a.id==='asset-local-mouth'))state.assets.push({id:'asset-local-mouth',type:'表情',alias:'嘴部张合（研究）',source:'b_mouth.mouth_001'});const len=Math.min(5,duration),start=Math.min(state.current,Math.max(0,duration-len));if(!o.components.includes(key))o.components.push(key);const clip={id:id(),name:key==='expression'?'微笑':c.name,start,len,...(key==='expression'?{weight:80,...(faces?{assetId:'asset-local-mouth',name:'嘴部张合（研究）'}:{})}:{})},trackId=id();state.tracks.push({id:trackId,name:`${o.name} · ${c.name}`,type:key,target:o.id,clips:[clip]});
     remember(before);closeModal();selectedAsset=null;setBottomTab('timeline');render();notify(`已为 ${o.name} 添加${c.name}轨道`);const scroller=$('.timeline-scroll'),row=$(`#tracks [data-track="${CSS.escape(trackId)}"]`);if(row){const r=row.getBoundingClientRect(),view=scroller.getBoundingClientRect();if(r.bottom>view.bottom)scroller.scrollTop+=r.bottom-view.bottom;else if(r.top<view.top)scroller.scrollTop+=r.top-view.top;}
   }
   function openDialogueModal(insertIndex=CreatorStory.insertionIndex(state,state.current)){
@@ -1119,16 +1150,16 @@
     clampFade:(c,t)=>{if(['animation','expression'].includes(t.type))CreatorFades.clampStored(c,fadeSpan(c,t.type));else for(const k of ['fadeIn','fadeOut'])if(c[k]!==undefined)c[k]=Math.min(c[k],c.len);},
     checkCut:(c,t,cut)=>{if(!['animation','expression'].includes(t.type))return;const span=fadeSpan(c,t.type),a=CreatorFades.amounts(c,span);if(cut<a.fadeIn-frame/2||a.fadeOut>0&&cut>span-a.fadeOut+frame/2&&cut<span+frame/2)throw Error('请在渐变范围之外分割片段');}
   };}
-  async function timelineTransaction(action,message){
+  async function timelineTransaction(action,message,positioned=[]){
     if(timelineEditBusy||drag||exporting)return;finishGizmoEdit();commitInspectorInput();setPlaying(false);
     const before=copyState(),identity=state,stamp=fingerprint(),next=structuredClone(before);timelineEditBusy=true;
-    try{const selected=await action(next,timelineEnvironment());if(state!==identity||fingerprint()!==stamp)throw Error('工程已改变，请重试');state=next;remember(before);const all=selected||[],first=getClip(all[0])?.clip,strong=first&&CreatorTimelineEdit.expand(state,[first.id],false);setTimelineSelection(first&&!first.groupId&&strong.length===all.length&&strong.every(r=>all.includes(r.clip.id))?[first.id]:all);uiSceneGate=null;render();notify(message);}catch(error){notify(error.message);}finally{timelineEditBusy=false;}
+    try{const selected=await action(next,timelineEnvironment());if(state!==identity||fingerprint()!==stamp)throw Error('工程已改变，请重试');state=next;remember(before,positioned);const all=selected||[],first=getClip(all[0])?.clip,strong=first&&CreatorTimelineEdit.expand(state,[first.id],false);setTimelineSelection(first&&!first.groupId&&strong.length===all.length&&strong.every(r=>all.includes(r.clip.id))?[first.id]:all);uiSceneGate=null;render();notify(message);}catch(error){notify(error.message);}finally{timelineEditBusy=false;}
   }
   function splitSelected(){return timelineTransaction((s,e)=>CreatorTimelineEdit.cut(s,timelineIds(),quantize(state.current),e),'已在播放头处分割');}
   function trimSelected(side){return timelineTransaction((s,e)=>CreatorTimelineEdit.cut(s,timelineIds(),quantize(state.current),e,side),'已裁掉播放头'+(side==='left'?'左':'右')+'侧内容，保留时间轴空隙');}
   let clipClipboard=null;
   function copySelectedClip(){try{clipClipboard=CreatorTimelineEdit.copy(state,timelineIds(),!soloClipId);notify('已复制 '+clipClipboard.items.length+' 个片段');}catch(error){notify(error.message);}}
-  function pasteClip(){return timelineTransaction((s,e)=>CreatorTimelineEdit.paste(s,clipClipboard,state.current,e),'已粘贴片段');}
+  function pasteClip(){return timelineTransaction((s,e)=>CreatorTimelineEdit.paste(s,clipClipboard,state.current,e),'已粘贴片段',clipClipboard?.trackSettings?.map(t=>t.id));}
   function deleteSelected(){return timelineTransaction(s=>CreatorProjectRemoval.clips(s,timelineIds(),assetById,!soloClipId),'已删除所选片段');}
   function groupSelected(){return timelineTransaction((s,e)=>CreatorTimelineEdit.group(s,timelineIds(),e.id),'已组合片段');}
   function ungroupSelected(){return timelineTransaction(s=>CreatorTimelineEdit.ungroup(s,timelineIds()),'已取消组合，原音画关联保留');}
@@ -1189,7 +1220,7 @@
     const detail=plan.locked?'请先解锁此轨道及其关联片段所在轨道。':`将删除此轨道的 ${track.clips.length} 个片段${plan.external?`及其他轨道的 ${plan.external} 个关联片段`:''}；操作可撤销，对象组件保留。`;
     showModal(`<div class="modal-head"><div><h2>轨道选项</h2><p>${esc(track.name)}</p></div><button class="icon-button" data-close aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">画面合成轨道上层在前；滤镜／特效按所选范围处理。相机控制与场景切换保留各自的控制优先级。</p><button class="add-component" id="track-up" ${index===0||track.layerRole==='base'||peers[index-1]?.layerRole==='base'?'disabled':''}>上移轨道</button><button class="add-component" id="track-down" ${index===peers.length-1||track.layerRole==='base'?'disabled':''}>下移轨道</button><button class="add-component" id="track-remove" ${plan.locked||track.layerRole==='base'?'disabled':''}>删除轨道</button>${track.type==='world'?compositionEditor.fields(track,track):''}<p class="hint">${esc(detail)}</p></div>`);
     if(track.type==='world')compositionEditor.bind(track,track);
-    for(const [selector,delta] of [['#track-up',-1],['#track-down',1]])$(selector).onclick=()=>{const members=timelineTrackPeers(track),at=members.indexOf(track),other=members[at+delta],from=state.tracks.indexOf(track),to=state.tracks.indexOf(other);if(from<0||to<0||track.layerRole==='base'||other.layerRole==='base')return;if(track.locked||other.locked){notify('请先解锁轨道');return;}const before=copyState();[state.tracks[from],state.tracks[to]]=[state.tracks[to],state.tracks[from]];remember(before);closeModal();renderTimeline();updateClock();};
+    for(const [selector,delta] of [['#track-up',-1],['#track-down',1]])$(selector).onclick=()=>{const members=timelineTrackPeers(track),at=members.indexOf(track),other=members[at+delta],from=state.tracks.indexOf(track),to=state.tracks.indexOf(other);if(from<0||to<0||track.layerRole==='base'||other.layerRole==='base')return;if(track.locked||other.locked){notify('请先解锁轨道');return;}const before=copyState();CreatorComposition.reorder(state,track,other,true);remember(before);closeModal();renderTimeline();updateClock();};
     $('#track-remove').onclick=()=>{if(track.layerRole==='base'){notify('固定基础轨道不能删除，可删除其中的片段');return;}const from=state.tracks.indexOf(track);if(from<0){notify('轨道已改变，请重试');return;}const current=trackRemovalPlan(track);if(current.locked){notify('相关轨道已锁定');return;}if(trackRemovalSignature(track,current)!==signature){notify('轨道或关联片段已改变，请重新打开选项');return;}closeModal();timelineTransaction(next=>CreatorProjectRemoval.track(next,track.id,assetById),'已删除轨道及关联片段');};
   });
   $('#tracks').addEventListener('click',e=>{const tn=e.target.closest('[data-track-name]');if(tn){const t=state.tracks.find(x=>x.id===tn.dataset.trackName);selectObject(t.target);}});
@@ -1206,49 +1237,87 @@
   };
   function renameTimelineGroup(groupId){const group=state.clipGroups?.find(g=>g.id===groupId);if(!group)return;const identity=state;showModal(`<div class="modal-head"><h2>重命名片段组</h2><button class="icon-button" data-close>×</button></div><div class="modal-body"><input id="group-name" class="input" maxlength="100" aria-label="片段组名称" value="${esc(group.name)}"><button id="save-group-name" class="solid-button">保存</button></div>`);$('#save-group-name').onclick=()=>{const value=$('#group-name').value.trim();if(!value||state!==identity)return;const before=copyState();group.name=value;remember(before);closeModal();renderTimeline();};$('#group-name').focus();$('#group-name').select();}
 
-  let timelineDropBusy=false,assetDropHint=null;
-  function clearAssetDropHint(){assetDropHint?.remove();assetDropHint=null;}
+  let timelineDropBusy=false,assetDropHint=null,assetDropRow=null;
+  function clearAssetDropHint(){
+    assetDropHint?.remove();assetDropHint=null;
+    assetDropRow?.classList.remove('drop-media-above','drop-media-here');assetDropRow=null;
+  }
   function endAssetDrag(){draggedAssetId=null;clearAssetDropHint();if(assetDragRefreshPending){assetDragRefreshPending=false;renderAssetBrowser();}}
   function timelineDropAsset(e){return assetById(e.dataTransfer?.getData('application/x-creator-asset')||e.dataTransfer?.getData('text/plain')||draggedAssetId);}
   function standaloneDropAsset(a){return a&&(CreatorScreenMedia.isVisual(a)||['音乐','音效'].includes(a.type)||a.effectKind==='visual');}
+  function externalVisual(transfer){
+    if(!window.assetAPI||!Array.from(transfer.types).includes('Files'))return null;
+    const files=Array.from(transfer.files),items=Array.from(transfer.items||[]).filter(item=>item.kind==='file');
+    if((files.length||items.length)!==1)return null;
+    const file=files[0],mime=file?.type||items[0]?.type||'',name=file?.name||'';
+    if(file){
+      if(/\.(mp4|mov|webm|mkv)$/i.test(name))return {type:'视频'};
+      if(/\.(png|jpe?g|webp|gif)$/i.test(name))return {type:'贴图'};
+    }else if(/^(video|image)\//.test(mime))return {type:mime.startsWith('video/')?'视频':'贴图'};
+    return null;
+  }
   function assetDropTarget(e,a){
     const ruler=$('#ruler').getBoundingClientRect(),view=$('.timeline-scroll').getBoundingClientRect();
-    if(!ruler.width||e.clientX<view.left+trackLabelWidth||e.clientY<ruler.bottom)return null;
-    const start=quantize(Math.max(0,Math.min(duration-frame,(e.clientX-ruler.left)/ruler.width*duration)));
-    // Right-of-content blank space retains the hovered row as a potential target.
-    const row=e.target.closest('[data-track]')||[...$('#tracks').querySelectorAll('[data-track]')].find(r=>{const b=r.getBoundingClientRect();return e.clientY>=b.top&&e.clientY<b.bottom;});
-    const hover=row&&state.tracks.find(t=>t.id===row.dataset.track),type=CreatorScreenMedia.isVisual(a)?'media':a.effectKind==='visual'?CreatorPostEffects.trackType(a.preset):'audio';
+    if(!ruler.width||e.clientY<ruler.bottom)return null;
+    const media=CreatorScreenMedia.isVisual(a);
+    const row=e.target.closest('.track-row')||Array.from($('#tracks').children).find(r=>{
+      const b=r.getBoundingClientRect();return e.clientY>=b.top&&e.clientY<b.bottom;
+    });
+    const onLabel=e.clientX<view.left+trackLabelWidth;
+    if(onLabel&&(!row||!media))return null;
+    const start=quantize(Math.max(0,Math.min(duration-frame,onLabel?state.current:(e.clientX-ruler.left)/ruler.width*duration)));
+    const hover=row?.dataset.track?state.tracks.find(t=>t.id===row.dataset.track):null;
+    const group=row?.dataset.trackGroup&&timelineRows.find(r=>r.group&&r.key===row.dataset.trackGroup);
+    const anchor=hover||group?.tracks[0]||null;
+    const type=media?'media':a.effectKind==='visual'?CreatorPostEffects.trackType(a.preset):'audio';
     const track=hover?.type===type&&!(type==='audio'&&hover.clips.some(c=>c.dialogue))?hover:null;
-    const len=Math.min(duration-start,CreatorScreenMedia.isVisual(a)?(a.visual?.kind==='video'?a.visual.duration:5):a.effectKind==='visual'?4:3);
+    const unknown=media&&a.type==='视频'&&!a.visual?.duration;
+    const len=quantize(Math.min(duration-start,media?(a.type==='视频'?(a.visual?.duration||frame):5):a.effectKind==='visual'?4:3));
     const overlap=track?.clips.some(c=>start<c.start+c.len-1e-6&&start+len>c.start+1e-6);
-    return {start,track,type,create:!track||overlap,ruler,view,row};
+    return {start,track,anchor,type,create:!track||overlap,unknown,ruler,view,row};
   }
   function showAssetDropHint(e,a,target){
     clearAssetDropHint();if(!target)return;
     const blocked=target.track?.locked||timelineDropBusy||projectBusy||timelineEditBusy||exporting||translationCooking;
     e.dataTransfer.dropEffect=blocked?'none':'copy';if(blocked)return;
     const {ruler,view,start,type,create,row}=target,box=document.createElement('div');box.className='timeline-asset-drop';box.setAttribute('aria-hidden','true');
-    box.textContent=(create?'新建'+({media:'画面轨道（最上层）',audio:'声音轨道',visualFilter:'滤镜轨道',visualEffect:'特效轨道'}[type]):'添加到「'+target.track.name+'」')+' · '+time(start);
+    let action;
+    if(type==='media'){
+      action=create?(target.anchor?'在「'+target.anchor.name+'」正上方新建画面轨':'新建画面轨'):'添加到「'+target.track.name+'」';
+      if(!create&&target.unknown)action+='（如有重叠则在上方建轨）';
+      if(row){assetDropRow=row;row.classList.add(create?'drop-media-above':'drop-media-here');}
+    }else action=create?'新建'+({audio:'声音轨道',visualFilter:'滤镜轨道',visualEffect:'特效轨道'}[type]):'添加到「'+target.track.name+'」';
+    box.textContent=action+' · '+time(start);
     const x=Math.max(view.left+trackLabelWidth,Math.min(view.right-3,ruler.left+start/duration*ruler.width));
     Object.assign(box.style,{left:x+'px',top:Math.max(ruler.bottom,Math.min(view.bottom-30,row?.getBoundingClientRect().top??e.clientY))+'px',maxWidth:Math.max(150,view.right-view.left-20)+'px'});
     if(view.right-x<240)box.classList.add('label-left');document.body.appendChild(box);assetDropHint=box;
   }
   $('.timeline-scroll').addEventListener('dragover',e=>{
-    if(e.dataTransfer?.files?.length||Array.from(e.dataTransfer?.types||[]).includes('Files')||Array.from(e.dataTransfer?.types||[]).includes('application/x-creator-effect-track'))return;
-    const a=timelineDropAsset(e);if(!standaloneDropAsset(a)){clearAssetDropHint();return;}
+    if(Array.from(e.dataTransfer.types).includes('application/x-creator-effect-track'))return;
+    const a=externalVisual(e.dataTransfer)||timelineDropAsset(e);if(!standaloneDropAsset(a)){clearAssetDropHint();return;}
     const target=assetDropTarget(e,a);if(!target){clearAssetDropHint();return;}e.preventDefault();e.stopPropagation();showAssetDropHint(e,a,target);
   },true);
   $('.timeline-scroll').addEventListener('dragleave',e=>{if(!e.currentTarget.contains(e.relatedTarget))clearAssetDropHint();});
   $('.timeline-scroll').addEventListener('drop',async e=>{
-    if(e.dataTransfer?.files?.length||e.dataTransfer?.getData('application/x-creator-effect-track'))return;
-    const a=timelineDropAsset(e);if(!a)return;
+    if(e.dataTransfer?.getData('application/x-creator-effect-track'))return;
+    const fileAsset=externalVisual(e.dataTransfer);
+    let a=fileAsset||timelineDropAsset(e);if(!a)return;
     if(!standaloneDropAsset(a)){if(!e.target.closest('[data-lane]')){e.preventDefault();notify(a.effectKind==='audio'?'请把声音效果拖到声音片段上':'此素材需要匹配的目标轨道；角色动作和表情请放到对应角色轨道');}endAssetDrag();return;}
     const target=assetDropTarget(e,a);if(!target)return;e.preventDefault();e.stopImmediatePropagation();endAssetDrag();
     if(projectBusy||timelineEditBusy||timelineDropBusy||exporting||translationCooking)return notify('工作台正忙，请稍后拖入素材');
     if(target.track?.locked)return notify('目标轨道已锁定');
     cancelMarquee();finishGizmoEdit();commitInspectorInput();setPlaying(false);const original=state;timelineDropBusy=true;
     try{
-      if(target.type==='media'){const added=await mediaEditor.add(a,target.track,target.start,{newTrackOnOverlap:true});if(added)notify('已添加画面片段：'+assetDisplay(a));return;}
+      if(target.type==='media'){
+        if(fileAsset){
+          [a]=await importFiles(e.dataTransfer.files);
+          if(!a)return;
+          if(state!==original)throw Error('工程已切换，请重新拖入');
+        }
+        const added=await mediaEditor.add(a,target.track,target.start,{newTrackOnOverlap:true,anchor:target.anchor});
+        if(added)notify('已添加至「'+added.track.name+'」 · '+time(added.clip.start));
+        return;
+      }
       if(a.effectKind==='visual'){effectsEditor.addVisual(a.preset,target.create?undefined:target.track,target.start);return;}
       if(a.filmCatalogId)throw Error('请先在素材属性中导入音频');
       const measured=a.scope?await audioClipLength(a,target.start):{length:Math.min(3,duration-target.start),truncated:false};
@@ -1266,7 +1335,7 @@
   document.addEventListener('visibilitychange',()=>{if(document.hidden)endAssetDrag();});
 
   $('#tracks').ondrop=async e=>{
-    const moving=e.dataTransfer.getData('application/x-creator-effect-track');if(moving){e.preventDefault();const from=state.tracks.find(t=>t.id===moving),to=state.tracks.find(t=>t.id===e.target.closest('[data-track]')?.dataset.track);if(!from||!to||from===to||(!CreatorComposition.visual(from)||!CreatorComposition.visual(to)))return;if(from.locked||to.locked){notify('请先解锁轨道');return;}const before=copyState(),a=state.tracks.indexOf(from),b=state.tracks.indexOf(to);state.tracks.splice(a,1);state.tracks.splice(b,0,from);remember(before);render();return;}
+    const moving=e.dataTransfer.getData('application/x-creator-effect-track');if(moving){e.preventDefault();const from=state.tracks.find(t=>t.id===moving),to=state.tracks.find(t=>t.id===e.target.closest('[data-track]')?.dataset.track);if(!from||!to||from===to||(!CreatorComposition.visual(from)||!CreatorComposition.visual(to)))return;if(from.locked||to.locked){notify('请先解锁轨道');return;}const before=copyState();CreatorComposition.reorder(state,from,to);remember(before);render();return;}
     const lane=e.target.closest('[data-lane]'),asset=assetById(e.dataTransfer.getData('text/plain'));if(!lane||!asset)return;e.preventDefault();
     let track=state.tracks.find(t=>t.id===lane.dataset.lane);if(!track)return;
     if(asset.effectKind){if(asset.effectKind==='audio'){const element=e.target.closest('[data-clip]');effectsEditor.attach(asset.preset,element&&getClip(element.dataset.clip));}else{const rect=lane.getBoundingClientRect();effectsEditor.addVisual(asset.preset,track,quantize(Math.max(0,Math.min(duration-frame,(e.clientX-rect.left)/rect.width*duration))));}return;}

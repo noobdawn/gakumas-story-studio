@@ -4,42 +4,47 @@
   const labels={animation:'动画',expression:'表情',decal:'贴花 / 特效',gaze:'注视'},scopes={full:'全身',head:'头颈',upperBody:'上半身',lowerBody:'下半身',leftArm:'左臂和手',rightArm:'右臂和手'};
   const options=(items,value)=>Object.entries(items).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('');
   function change(fn){const before=structuredClone(e.state());fn();e.remember(before);e.render();}
-  function addTrack(actor,type){
-   const s=e.state(),tracks=s.tracks.filter(t=>t.target===actor.id&&t.type===type),t={id:e.id(),target:actor.id,type,layerRole:'overlay',name:actor.name+' · '+(type==='animation'?'动画叠加 ':'表情叠加 ')+(tracks.filter(t=>t.layerRole==='overlay').length+1),clips:[]};
+  function addTrack(actor,type,role='overlay'){
+   const s=e.state(),tracks=s.tracks.filter(t=>t.target===actor.id&&t.type===type),t={id:e.id(),target:actor.id,type,layerRole:role,name:actor.name+' · '+(role==='base'?(type==='animation'?'基础动画':'基础表情'):(type==='animation'?'动画叠加 ':'表情叠加 ')+(tracks.filter(t=>t.layerRole==='overlay').length+1)),clips:[]};
    s.tracks.push(t);if(!actor.components.includes(type))actor.components.push(type);return t;
   }
   function trackFor(actor,type,start,len,preferred,forceOverlay=false){
    const free=t=>t&&!t.locked&&t.enabled!==false&&!t.clips.some(c=>start<c.start+c.len-1e-6&&start+len>c.start+1e-6);
+   const tracks=e.state().tracks.filter(t=>t.target===actor.id&&t.type===type);
+   const base=tracks.find(t=>t.layerRole==='base');
+   if(!preferred&&!forceOverlay){if(!base)return addTrack(actor,type,'base');preferred=base;}
    if(free(preferred)&&(!forceOverlay||preferred.layerRole==='overlay'))return preferred;
-   const s=e.state();return s.tracks.find(t=>t.target===actor.id&&t.type===type&&t.layerRole==='overlay'&&free(t))||addTrack(actor,type);
+   return tracks.find(t=>t.layerRole==='overlay'&&free(t))||addTrack(actor,type);
   }
   async function addClip(actor,assetId,start,preferred,settings={}){
    const s=e.state(),def=e.motion(assetId),face=e.face(assetId),shape=e.shape(assetId),type=def?'animation':'expression';
    if(!actor||(!def&&!face&&!shape))throw Error('角色或素材不可用');
-   if(preferred?.locked)throw Error('目标轨道已锁定');
    if(face)await e.prepare(actor,assetId,start);
    if(settings.stillWanted&&!settings.stillWanted())throw Error('操作已取消或演出设置已改变，请重新添加');
    if(e.state()!==s||!s.objects.includes(actor)||preferred&&!s.tracks.includes(preferred))throw Error('工程或轨道已改变，请重新添加');
+   if(preferred?.locked||preferred?.enabled===false)throw Error('目标轨道已锁定或停用');
    if(shape&&!e.supports(actor,shape.source))throw Error('此角色缺少该形变或特效');
    if(face&&!face.channels.some(c=>e.supports(actor,c.shape)))throw Error('此角色没有可用的表情通道');
    const raw=settings.length??(def?.isPose||face&&face.length<=1.01/e.fps()?3:def?.length||face?.length||3),len=Math.min(Math.ceil((raw-.000001)*e.fps())/e.fps(),e.duration()-start);
    if(len<1/e.fps())throw Error('演出剩余时长不足');
-   const before=structuredClone(s),track=trackFor(actor,type,start,len,preferred,!!def?.isAdditive);
+   const before=structuredClone(s),track=settings.newLayer?addTrack(actor,type):trackFor(actor,type,start,len,preferred,!!def?.isAdditive);
    const clip={id:e.id(),name:e.name(assetId),assetId,start,len,weight:100,fadeIn:0,fadeOut:0};
    if(def){clip.layerPlayback=true;clip.loop=!!def.isLoop;if(track.layerRole==='overlay'){clip.blendMode=def.isAdditive?'additive':'override';clip.scope=def.defaultScope||'full';if(def.isAdditive){clip.fadeIn=Math.min(.15,len/4);clip.fadeOut=Math.min(.15,len/4);}}}
    if(face)clip.playback='hold';track.clips.push(clip);e.selectClip(clip.id);if(settings.commit!==false){e.remember(before);e.render();}
    return {clips:[clip.id],length:len,skipped:face?face.channels.filter(c=>!e.supports(actor,c.shape)).length:0,trackId:track.id};
   }
-  function openExpressionPicker(actor,preferred){
+  function openClipPicker(actor,preferred,type='expression',newLayer=false){
+   const body=type==='animation',subject=body?'动作':'表情';
+   const kinds=body?{all:'全部动作',pose:'静态姿势',animation:'动画',overlay:'可叠加动作'}:{face:'完整表情',shape:'单项形变',effect:'贴花 / 特效'};
    const initial=e.state(),start=initial.current,initialFps=e.fps(),initialDuration=e.duration();
-   e.showModal(`<div class="modal-head"><div><h2>添加表情片段</h2><p>${esc(actor.name)} · 从 ${start.toFixed(2)} 秒开始</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">选择素材后插入时间轴；片段结束后恢复常驻表情。常驻表情在角色属性中设置。</p><div class="field"><label for="expression-picker-search">搜索表情</label><input id="expression-picker-search" class="input" placeholder="例如：娇羞、微笑、原始资源名"><label for="expression-picker-kind">素材类型</label><select id="expression-picker-kind"><option value="face">完整表情</option><option value="shape">单项形变</option><option value="effect">贴花 / 特效</option></select></div><div id="expression-picker-list" class="expression-picker-list" aria-label="可选表情"></div><p id="expression-picker-count" class="hint"></p><p id="expression-picker-error" class="error" role="alert"></p><button id="expression-picker-resident" class="add-component">查看常驻表情设置</button></div>`);
+   e.showModal(`<div class="modal-head"><div><h2>添加${subject}片段</h2><p>${esc(actor.name)} · 从 ${start.toFixed(2)} 秒开始</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">${newLayer?'选择素材后创建叠加层并插入片段。':'选择素材后插入时间轴。'}</p><div class="field"><label for="expression-picker-search">搜索${subject}</label><input id="expression-picker-search" class="input" placeholder="按名称或原始资源名搜索"><label for="expression-picker-kind">素材类型</label><select id="expression-picker-kind">${options(kinds,Object.keys(kinds)[0])}</select></div><div id="expression-picker-list" class="expression-picker-list" aria-label="可选${subject}"></div><p id="expression-picker-count" class="hint"></p><p id="expression-picker-error" class="error" role="alert"></p><button id="expression-picker-resident" class="add-component">查看角色常驻设置</button></div>`);
    const modal=$('#modal'),list=$('#expression-picker-list'),search=$('#expression-picker-search'),kind=$('#expression-picker-kind');let busy=false;
    function draw(){
     const terms=search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean),mode=kind.value;
-    const candidates=e.assets().filter(a=>{const face=e.face(a.id),shape=e.shape(a.id);return mode==='face'?!!face:!!shape&&e.supports(actor,shape.source)&&(mode==='shape'?shape.source.startsWith('b_'):!shape.source.startsWith('b_'));});
+    const candidates=e.assets().filter(a=>{if(body){const def=e.motion(a.id);return !!def&&L.matchesFilter(def,mode);}const face=e.face(a.id),shape=e.shape(a.id);return mode==='face'?!!face:!!shape&&e.supports(actor,shape.source)&&(mode==='shape'?shape.source.startsWith('b_'):!shape.source.startsWith('b_'));});
     const matches=candidates.filter(a=>terms.every(term=>(e.name(a.id)+' '+a.source).toLocaleLowerCase().includes(term)));
     matches.sort((a,b)=>Number(e.name(b.id).includes(actor.name))-Number(e.name(a.id).includes(actor.name)));
-    list.innerHTML=matches.slice(0,100).map(a=>`<button class="costume-picker-row" data-expression-pick="${esc(a.id)}"><span>${esc(e.name(a.id))}<small>${esc(a.source)}</small></span><small>${e.face(a.id)?e.face(a.id).length<=1.01/e.fps()?'静态表情':e.face(a.id).length.toFixed(2)+' 秒':'权重控制'}</small></button>`).join('')||`<p class="hint">${candidates.length?'没有匹配的表情，请更换搜索词。':'此类型暂无可用素材，请检查资源缓存是否已准备。'}</p>`;
+    list.innerHTML=matches.slice(0,100).map(a=>`<button class="costume-picker-row" data-expression-pick="${esc(a.id)}"><span>${esc(e.name(a.id))}<small>${esc(a.source)}</small></span><small>${body?motionKind(e.motion(a.id)):e.face(a.id)?e.face(a.id).length<=1.01/e.fps()?'静态表情':e.face(a.id).length.toFixed(2)+' 秒':'权重控制'}</small></button>`).join('')||`<p class="hint">${candidates.length?'没有匹配的素材，请更换搜索词。':'此类型暂无可用素材，请检查资源缓存是否已准备。'}</p>`;
     $('#expression-picker-count').textContent=`匹配 ${matches.length} 项${matches.length>100?'，显示前 100 项，请继续搜索':''}`;
    }
    search.oninput=draw;kind.onchange=draw;
@@ -49,10 +54,10 @@
     modal.querySelectorAll('button:not([data-close]),input,select').forEach(x=>x.disabled=true);
     const valid=()=>initial===e.state()&&initial.objects.includes(actor)&&$('#expression-picker-list')===list&&!$('#overlay').classList.contains('hidden')&&e.fps()===initialFps&&e.duration()===initialDuration;
     try{
-     if(!valid())throw Error('工程或演出设置已改变，请重新选择表情');
-     const base=preferred||initial.tracks.find(t=>t.target===actor.id&&t.type==='expression'&&t.layerRole==='base');
-     const result=await addClip(actor,button.dataset.expressionPick,start,base,{stillWanted:valid});
-     e.closeModal();e.revealClip(result.clips[0]);e.notify('已添加表情片段'+(result.skipped?'；跳过 '+result.skipped+' 个此角色不支持的通道':''));
+     if(!valid())throw Error('工程或演出设置已改变，请重新选择素材');
+     const base=preferred||initial.tracks.find(t=>t.target===actor.id&&t.type===type&&t.layerRole==='base');
+     const result=await addClip(actor,button.dataset.expressionPick,start,newLayer?undefined:base,{stillWanted:valid,newLayer});
+     e.closeModal();e.revealClip(result.clips[0]);e.notify('已添加'+subject+'片段'+(result.skipped?'；跳过 '+result.skipped+' 个此角色不支持的通道':''));
     }catch(error){if($('#expression-picker-list')===list)$('#expression-picker-error').textContent=error.message;}
     finally{busy=false;if($('#expression-picker-list')===list)modal.querySelectorAll('button,input,select').forEach(x=>x.disabled=false);}
    };
@@ -203,6 +208,6 @@
     };
    }
   }
-  return {residentMarkup,bindResident,motionFields,expressionFields,bindSources,clipFields,bindClip,addTrack,trackFor,addClip,openExpressionPicker};
+  return {residentMarkup,bindResident,motionFields,expressionFields,bindSources,clipFields,bindClip,addClip,openClipPicker};
  };
 })(globalThis);

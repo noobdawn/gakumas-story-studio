@@ -22,10 +22,9 @@
    for(const type of ['animation','expression']){
     if(!actor.components.includes(type))actor.components.push(type);
     const tracks=state.tracks.filter(t=>t.type===type&&t.target===actor.id);
-    if(!tracks.some(t=>t.layerRole==='base')){
-     const first=type==='animation'?tracks.find(t=>!t.layerRole):null;
+    if(type==='animation'&&!tracks.some(t=>t.layerRole==='base')){
+     const first=tracks.find(t=>!t.layerRole&&t.clips.length);
      if(first)first.layerRole='base';
-     else state.tracks.push({id:newId(),name:actor.name+' · '+(type==='animation'?'基础动画':'基础表情'),type,target:actor.id,layerRole:'base',clips:[]});
     }
     for(const track of tracks)if(!track.layerRole)track.layerRole='legacy';
    }

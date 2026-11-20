@@ -60,7 +60,7 @@ async function run(){
   const characterColors=await require('./character-colors-ui.cjs')(js);
   results.push({characterColors});
   results.push({settingsFiles:await require('./settings-files-ui.cjs')(js)});
-  results.push({clipInspector:await require('./clip-inspector-ui.cjs')(win,ui,temporary)});
+  results.push(await require('./clip-inspector-ui.cjs')(win,ui,temporary));
   assert.deepEqual(errors,[]);
   return {passed:true,matrix:results,progressStates:'passed',modal:'passed',animationClip,visibleUI:'not tested; emulated device scale only'};
 }

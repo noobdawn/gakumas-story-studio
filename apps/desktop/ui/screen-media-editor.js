@@ -4,7 +4,7 @@ globalThis.CreatorScreenMediaEditor={create(env){
  let units='percent',snap=true,gesture=null;const preparations=new Map();
  const state=()=>env.state(),layer=t=>state().objects.find(o=>o.id===t.target),asset=c=>env.asset(c.assetId);
  const editable=t=>!t?.locked;
- function commit(fn){const before=env.copy();try{fn();env.remember(before);env.render();}catch(e){env.restore(before);env.notify(e.message);}}
+ function commit(fn,positioned=[]){const before=env.copy();try{fn();env.remember(before,positioned);env.render();return true;}catch(e){env.restore(before);env.notify(e.message);return false;}}
  function readInfo(a){
   if(!M.isVisual(a)||!a.scope)throw Error('请先导入图片或视频文件');
   if(!preparations.has(a.id)){
@@ -31,8 +31,7 @@ globalThis.CreatorScreenMediaEditor={create(env){
      for(const track of state().tracks)if(track.type==='audio')track.clips=track.clips.filter(item=>!linked.includes(item));
      delete c.mediaLink;
     }else if(linked.length===1){
-     c.mediaLink=env.id();
-     state().tracks.push({id:env.id(),name:t.name+' · 视频声音',type:'audio',target:t.target,clips:[{id:env.id(),name:c.name+' · 声音',assetId:a.id,start:c.start,len:c.len,sourceOffset:0,mediaRate:c.mediaRate||1,mediaLink:c.mediaLink,audioLoop:c.loop===true,volume:1}]});
+     addLinkedAudio(t,c);
     }else{
      for(const item of linked)if(item!==c){
       item.assetId=a.id;item.sourceOffset=0;delete item.originalLoop;
@@ -42,8 +41,55 @@ globalThis.CreatorScreenMediaEditor={create(env){
    }
   });
  }
- async function add(a,t,start=state().current,options={}){if(env.supported&& !env.supported())throw Error('请重启使用新版 Player 后再添加画面');const original=state();env.notify('正在准备画面素材…');const info=await prepare(a);if(state()!==original||t&&!state().tracks.includes(t))throw Error('工程已改变，请重新添加');if(!env.asset(a.id))throw Error('画面素材已移除，请重新添加');if(t&&t.type!=='media')throw Error('目标必须是画面轨道');if(t&&!editable(t))throw Error('画面轨道已锁定');start=env.quantize(start);const remaining=env.duration()-start,len=env.quantize(Math.min(info.kind==='video'?info.duration:5,remaining));if(len<env.frame())throw Error('播放头之后没有足够的时间');if(t?.clips.some(c=>start<c.start+c.len-1e-6&&start+len>c.start+1e-6)){if(options.newTrackOnOverlap)t=undefined;else throw Error('此层已有重叠片段，请添加到新画面层');}let added;commit(()=>{if(!t){const o={id:env.id(),name:'画面 '+(state().objects.filter(o=>o.type==='画面').length+1),type:'画面',icon:'image',parent:'scene',components:['media'],visible:true,mediaLayout:M.preset(info.kind==='video'?'full':'center')};state().objects.push(o);t={id:env.id(),name:o.name,type:'media',target:o.id,clips:[]};state().tracks.push(t);}const c={id:env.id(),name:env.label(a),assetId:a.id,start,len,sourceOffset:0,loop:false,mediaRate:1};t.clips.push(c);t.clips.sort((a,b)=>a.start-b.start);if(info.hasAudio){c.mediaLink=env.id();state().tracks.push({id:env.id(),name:t.name+' · 视频声音',type:'audio',target:t.target,clips:[{id:env.id(),name:c.name+' · 声音',assetId:a.id,start,len,sourceOffset:0,mediaRate:1,mediaLink:c.mediaLink,audioLoop:false,volume:1}]});}added={track:t,clip:c};env.selectClip(c.id);});env.close();env.timeline();return added;}
- function picker(t,at){const entries=env.assets().filter(M.isVisual);env.modal(`<div class="modal-head"><h2>添加图片 / 视频</h2><button class="icon-button" data-close>×</button></div><div class="modal-body"><p class="hint">${t?'放入当前画面层，继承其默认位置。':'新建固定在画布上的画面层。'}可先在素材浏览器导入文件。</p><input class="input" id="media-pick-query" placeholder="搜索素材"><div id="media-pick-list"></div></div>`);const draw=()=>{$('#media-pick-list').innerHTML=entries.filter(a=>(env.label(a)+' '+a.source).toLowerCase().includes($('#media-pick-query').value.toLowerCase())).map(a=>`<button class="add-component" data-media-pick="${esc(a.id)}">${a.type==='视频'?'▶':'▧'} ${esc(env.label(a))}</button>`).join('')||'<p class="hint">暂无图片或视频，请先导入。</p>';$('#media-pick-list').querySelectorAll('[data-media-pick]').forEach(b=>b.onclick=()=>{b.disabled=true;add(env.asset(b.dataset.mediaPick),t,at??state().current).catch(e=>{b.disabled=false;env.notify(e.message);});});};$('#media-pick-query').oninput=draw;draw();}
+ const overlaps=(clip,start,len)=>start<clip.start+clip.len-1e-6&&start+len>clip.start+1e-6;
+ function addLinkedAudio(track,clip){
+  let sound=state().tracks.find(t=>t.type==='audio'&&t.target===track.target&&!t.locked&&t.enabled!==false
+    &&t.clips.every(c=>c.mediaLink&&!overlaps(c,clip.start,clip.len)));
+  if(!sound){
+   sound={id:env.id(),name:track.name+' · 视频声音',type:'audio',target:track.target,clips:[]};
+   state().tracks.push(sound);
+  }
+  clip.mediaLink=env.id();
+  sound.clips.push({id:env.id(),name:clip.name+' · 声音',assetId:clip.assetId,start:clip.start,len:clip.len,
+    sourceOffset:clip.sourceOffset,mediaRate:clip.mediaRate||1,mediaLink:clip.mediaLink,audioLoop:clip.loop===true,volume:1});
+  sound.clips.sort((a,b)=>a.start-b.start);
+ }
+ async function add(a,track,start=state().current,options={}){
+  if(env.supported&&!env.supported())throw Error('请重启使用新版 Player 后再添加画面');
+  const original=state(),anchor=options.anchor||track,object=options.object;
+  env.notify('正在准备画面素材…');
+  const info=await readInfo(a),s=state();
+  if(s!==original||[track,anchor].some(t=>t&&!s.tracks.includes(t))||object&&!s.objects.includes(object))throw Error('工程或目标轨道已改变，请重新拖入');
+  if(!env.asset(a.id))throw Error('画面素材已移除，请重新添加');
+  if(object)track=s.tracks.find(t=>t.target===object.id&&t.type==='media');
+  if(track&&track.type!=='media')throw Error('目标必须是画面轨道');
+  if(track?.locked)throw Error('画面轨道已锁定');
+  start=env.quantize(start);
+  const len=env.quantize(Math.min(info.kind==='video'?info.duration:5,env.duration()-start));
+  if(len<env.frame())throw Error('落点之后没有足够的时间');
+  if(track?.clips.some(c=>overlaps(c,start,len))){
+   if(!options.newTrackOnOverlap)throw Error('此层已有重叠片段，请添加到新画面层');
+   track=null;
+  }
+  const positioned=[],clip={id:env.id(),name:env.label(a),assetId:a.id,start,len,sourceOffset:0,loop:false,mediaRate:1};
+  const added=commit(()=>{
+   a.visual=info;
+   const localAsset=s.assets.find(x=>x.id===a.id);if(localAsset)localAsset.visual=info;
+   if(!track){
+    const o=object||{id:env.id(),name:'画面 '+(s.objects.filter(o=>o.type==='画面').length+1),type:'画面',icon:'image',
+      parent:'scene',components:['media'],visible:true,mediaLayout:M.preset(info.kind==='video'?'full':'center')};
+    if(!object)s.objects.push(o);
+    track={id:env.id(),name:o.name,type:'media',target:o.id,clips:[]};
+    if(options.newTrackOnOverlap){CreatorComposition.placeMediaTrack(s,track,anchor);positioned.push(track.id);}
+    else s.tracks.push(track);
+   }
+   track.clips.push(clip);track.clips.sort((a,b)=>a.start-b.start);
+   if(info.hasAudio)addLinkedAudio(track,clip);
+   env.selectClip(clip.id);
+  },positioned);
+  if(added){env.close();env.timeline(track.id);return {track,clip};}
+ }
+ function picker(t,at,object){const entries=env.assets().filter(M.isVisual);env.modal(`<div class="modal-head"><h2>添加图片 / 视频</h2><button class="icon-button" data-close>×</button></div><div class="modal-body"><p class="hint">${t||object?'放入当前画面层，继承其默认位置。':'新建固定在画布上的画面层。'}可先在素材浏览器导入文件。</p><input class="input" id="media-pick-query" placeholder="搜索素材"><div id="media-pick-list"></div></div>`);const draw=()=>{$('#media-pick-list').innerHTML=entries.filter(a=>(env.label(a)+' '+a.source).toLowerCase().includes($('#media-pick-query').value.toLowerCase())).map(a=>`<button class="add-component" data-media-pick="${esc(a.id)}">${a.type==='视频'?'▶':'▧'} ${esc(env.label(a))}</button>`).join('')||'<p class="hint">暂无图片或视频，请先导入。</p>';$('#media-pick-list').querySelectorAll('[data-media-pick]').forEach(b=>b.onclick=()=>{b.disabled=true;add(env.asset(b.dataset.mediaPick),t,at??state().current,{object}).catch(e=>{b.disabled=false;env.notify(e.message);});});};$('#media-pick-query').oninput=draw;draw();}
  function draws(){const result=[];for(const t of state().tracks.filter(t=>t.type==='media'&&t.enabled!==false)){const o=layer(t);if(!o||o.visible===false)continue;for(const {clip:c,time} of (state().compositionVersion===1?CreatorComposition.mediaSamples(state(),t,state().current,env.asset):t.clips.filter(c=>state().current>=c.start&&state().current<c.start+c.len).map(clip=>({clip,time:state().current})))){const a=asset(c);if(!M.isVisual(a)||!a.scope||!a.visual)throw Error('画面素材不可用，请在素材属性重新准备：'+c.name);const evaluated=M.layout(o,c,state().current-c.start);result.push({id:c.id,pivot:[evaluated.anchorX+evaluated.x,evaluated.anchorY+evaluated.y],asset:a,time:a.type==='视频'?M.sourceTime(c,state().current,a.visual):0,...M.quad(M.layout(o,c,state().current-c.start),a.visual,env.aspect())});}}if(result.length>32)throw Error('最多同时显示 32 个画面层');return result;}
  function selected(){const found=env.found();if(found?.track.type==='media')return found;const o=env.object();if(o?.type==='画面'){const t=state().tracks.find(t=>t.type==='media'&&t.target===o.id),c=t?.clips.find(c=>state().current>=c.start&&state().current<c.start+c.len);if(c)return {track:t,clip:c};}return null;}
  function selection(){const f=selected();return {mediaSelectedId:f?.clip.id||'',mediaEditable:!!f&&editable(f.track)&&!env.playing()&&state().current>=f.clip.start&&state().current<f.clip.start+f.clip.len,mediaSnap:snap};}
@@ -70,8 +116,11 @@ globalThis.CreatorScreenMediaEditor={create(env){
  box.querySelectorAll('[data-media-jump]').forEach(b=>b.onclick=()=>{state().current=c.start+Number(b.dataset.mediaJump);env.sync();env.inspector();});box.querySelectorAll('[data-media-delete-key]').forEach(b=>b.onclick=()=>edit(()=>{const [property,time]=b.dataset.mediaDeleteKey.split(',');c.mediaKeys[property]=c.mediaKeys[property].filter(k=>k.time!==Number(time));}));
  if(!editable(t))box.querySelectorAll('input,select,button:not(.keyframe-jump,[data-inspect-related])').forEach(b=>b.disabled=true);
  }
- function objectInspector(o){const t=state().tracks.find(t=>t.type==='media'&&t.target===o.id);if(!t)return false;$('#inspector').innerHTML=`<div class="inspector-section"><div class="field"><label>图层名称</label><input class="input" id="media-layer-name" value="${esc(o.name)}"></div><label class="dialogue-link"><input type="checkbox" id="media-layer-visible" ${o.visible!==false?'checked':''}> 显示图层</label><button class="add-component" id="media-layer-add">添加图片 / 视频片段…</button><button class="add-component" id="media-layer-front">向前一层</button><button class="add-component" id="media-layer-back">向后一层</button></div>`+fields(t,null);bind(t,null);$('#media-layer-name').onchange=e=>commit(()=>{o.name=e.target.value.trim().slice(0,100)||'画面';t.name=o.name;});$('#media-layer-visible').onchange=e=>commit(()=>o.visible=e.target.checked);$('#media-layer-add').onclick=()=>picker(t);for(const [selector,step] of [['#media-layer-front',-1],['#media-layer-back',1]])$(selector).onclick=()=>commit(()=>{const tracks=state().tracks,media=state().compositionVersion===1?CreatorComposition.tracks(state()):tracks.filter(t=>t.type==='media'),other=media[media.indexOf(t)+step];if(t.locked||other?.locked)throw Error('请先解锁轨道');if(other){const a=tracks.indexOf(t),b=tracks.indexOf(other);[tracks[a],tracks[b]]=[tracks[b],tracks[a]];}});return true;}
- function assetInspector(a){$('#inspector').innerHTML=`<div class="inspector-section"><h3>${esc(env.label(a))}</h3><p class="hint">${a.type==='视频'?'视频':'图片'} · ${esc(a.source)}</p>${a.visual?`<p>${a.visual.width} × ${a.visual.height}${a.visual.duration?' · '+a.visual.duration.toFixed(2)+' 秒':''}</p>`:''}<button class="add-component" id="media-asset-rename">修改别名</button><button class="add-component" id="media-asset-add">添加到新画面层</button><button class="add-component" id="media-asset-ready">检查 / 准备素材</button><p class="hint">拖到画面轨道空位可继承布局；拖到时间轴空白、其他轨道或重叠位置会新建画面层。GIF 当前导入第一帧；视频使用 H.264 播放副本，原文件保留。</p><p class="hint">超出 4096 像素的画面按比例缩小，视频帧率最高 60。</p></div>`;$('#media-asset-rename').onclick=()=>env.rename(a.id);$('#media-asset-add').onclick=()=>add(a).catch(e=>env.notify(e.message));$('#media-asset-ready').onclick=async()=>{try{await prepare(a);env.inspector();env.sync();env.notify('画面素材已就绪');}catch(e){env.notify(e.message);}};}
+ function objectInspector(o){const t=state().tracks.find(t=>t.type==='media'&&t.target===o.id);if(!t){
+  $('#inspector').innerHTML='<div class="inspector-section"><h3>'+esc(o.name)+'</h3><button class="add-component" id="media-layer-add">添加图片 / 视频片段…</button></div>';
+  $('#media-layer-add').onclick=()=>picker(null,state().current,o);return true;
+ }$('#inspector').innerHTML=`<div class="inspector-section"><div class="field"><label>图层名称</label><input class="input" id="media-layer-name" value="${esc(o.name)}"></div><label class="dialogue-link"><input type="checkbox" id="media-layer-visible" ${o.visible!==false?'checked':''}> 显示图层</label><button class="add-component" id="media-layer-add">添加图片 / 视频片段…</button><button class="add-component" id="media-layer-front">向前一层</button><button class="add-component" id="media-layer-back">向后一层</button></div>`+fields(t,null);bind(t,null);$('#media-layer-name').onchange=e=>commit(()=>{o.name=e.target.value.trim().slice(0,100)||'画面';t.name=o.name;});$('#media-layer-visible').onchange=e=>commit(()=>o.visible=e.target.checked);$('#media-layer-add').onclick=()=>picker(t);for(const [selector,step] of [['#media-layer-front',-1],['#media-layer-back',1]])$(selector).onclick=()=>commit(()=>{const tracks=state().tracks,media=state().compositionVersion===1?CreatorComposition.tracks(state()):tracks.filter(t=>t.type==='media'),other=media[media.indexOf(t)+step];if(t.locked||other?.locked)throw Error('请先解锁轨道');if(other)CreatorComposition.reorder(state(),t,other,true);});return true;}
+ function assetInspector(a){$('#inspector').innerHTML=`<div class="inspector-section"><h3>${esc(env.label(a))}</h3><p class="hint">${a.type==='视频'?'视频':'图片'} · ${esc(a.source)}</p>${a.visual?`<p>${a.visual.width} × ${a.visual.height}${a.visual.duration?' · '+a.visual.duration.toFixed(2)+' 秒':''}</p>`:''}<button class="add-component" id="media-asset-rename">修改别名</button><button class="add-component" id="media-asset-add">添加到新画面层</button><button class="add-component" id="media-asset-ready">检查 / 准备素材</button><p class="hint">拖到画面轨道空位会沿用该层布局。落点重叠或指向其他类型轨道时，在目标轨道正上方新建画面层。GIF 当前导入第一帧；视频使用 H.264 播放副本，原文件保留。</p><p class="hint">超出 4096 像素的画面按比例缩小，视频帧率最高 60。</p></div>`;$('#media-asset-rename').onclick=()=>env.rename(a.id);$('#media-asset-add').onclick=()=>add(a).catch(e=>env.notify(e.message));$('#media-asset-ready').onclick=async()=>{try{await prepare(a);env.inspector();env.sync();env.notify('画面素材已就绪');}catch(e){env.notify(e.message);}};}
  function consume(event){if(!event?.id||!['begin','move','end'].includes(event.phase)||![event.dx,event.dy,event.scale].every(Number.isFinite))return;const f=env.getClip(event.id);if(!f||!editable(f.track)||env.playing()||selected()?.clip.id!==event.id){if(gesture&&gesture.state===state())env.remember(gesture.before);gesture=null;return;}if(gesture&&(gesture.state!==state()||gesture.time!==state().current))gesture=null;if(!gesture||gesture.id!==event.id){gesture={id:event.id,state:state(),time:state().current,before:env.copy(),layout:M.layout(layer(f.track),f.clip,state().current-f.clip.start)};}if(event.phase==='begin')return;const base=gesture.layout;try{updateLayout(f.track,f.clip,{x:base.x+event.dx,y:base.y+event.dy,scale:Math.max(.001,Math.min(20,base.scale*event.scale))});env.sync();if(event.phase==='end'){env.remember(gesture.before);gesture=null;env.inspector();}}catch(e){if(gesture)env.restore(gesture.before);gesture=null;env.notify(e.message);}}
 
  return {add,picker,draws,selection,fields,bind,objectInspector,assetInspector,consume,selected,prepare};

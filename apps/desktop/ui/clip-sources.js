@@ -11,19 +11,19 @@ globalThis.CreatorClipSources = (() => {
   }
 
   function picker(e, track, clip, config) {
-    if (track.locked) return e.notify('轨道已锁定');
-    const initial = e.state(), original = clip.assetId, selectedClip = initial.selectedClip;
+    if (track?.locked) return e.notify('轨道已锁定');
+    const initial = e.state(), original = clip?.assetId, selectedClip = initial.selectedClip;
     const {key, title, hint, kinds, items, describe, prepare, apply} = config;
     const esc = e.esc, prefix = key + '-picker-', pageSize = 60;
     let chosen = original, page = 1, busy = false;
-    e.showModal(`<div class="modal-head"><div><h2>${esc(title)}</h2><p>${esc(clip.name)}</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div>
+    e.showModal(`<div class="modal-head"><div><h2>${esc(title)}</h2><p>${esc(clip?.name || config.context)}</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div>
       <div class="modal-body"><p class="hint">${esc(hint)}</p><div class="field"><label for="${prefix}search">搜索素材</label>
       <input id="${prefix}search" class="input" placeholder="按名称或原始名称搜索，空格分隔关键词">
       ${kinds ? `<label for="${prefix}kind">素材类型</label><select id="${prefix}kind">${Object.entries(kinds).map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join('')}</select>` : ''}</div>
       <div id="${prefix}list" class="expression-picker-list" aria-label="候选素材"></div>
       <div class="motion-picker-pages"><button id="${prefix}prev">上一页</button><span id="${prefix}count" class="hint" aria-live="polite"></span><button id="${prefix}next">下一页</button></div>
       <p id="${prefix}choice" class="hint clip-source-choice" aria-live="polite"></p><p id="${prefix}error" class="error" role="alert"></p></div>
-      <div class="modal-actions"><button id="${prefix}cancel" class="top-button">取消</button><button id="${prefix}apply" class="solid-button">应用到片段</button></div>`);
+      <div class="modal-actions"><button id="${prefix}cancel" class="top-button">取消</button><button id="${prefix}apply" class="solid-button">${clip ? '应用到片段' : '添加片段'}</button></div>`);
     const field = suffix => document.getElementById(prefix + suffix);
     const list = field('list'), search = field('search'), kind = field('kind');
     const candidates = () => items(kind?.value);
@@ -48,9 +48,11 @@ globalThis.CreatorClipSources = (() => {
     }
     function checkTarget() {
       if (!list.isConnected || document.querySelector('#overlay').classList.contains('hidden') ||
-          e.state() !== initial || initial.selectedClip !== selectedClip || !initial.tracks.includes(track) ||
-          !track.clips.includes(clip) || clip.assetId !== original) throw Error('工程或片段已改变，请重新选择素材');
-      if (track.locked) throw Error('轨道已锁定');
+          e.state() !== initial || initial.selectedClip !== selectedClip ||
+          clip && (!initial.tracks.includes(track) || !track.clips.includes(clip) || clip.assetId !== original)) {
+        throw Error(clip ? '工程或片段已改变，请重新选择素材' : '工程或选择已改变，请重新选择素材');
+      }
+      if (track?.locked) throw Error('轨道已锁定');
     }
     function candidate() {
       const asset = candidates().find(a => a.id === chosen);
@@ -82,7 +84,7 @@ globalThis.CreatorClipSources = (() => {
         const current = candidate();
         if (current.scope !== asset.scope || current.projectId !== asset.projectId || current.extension !== asset.extension) throw Error('素材来源已改变，请重新选择');
         const before = structuredClone(initial);
-        const followName = config.followSourceName && !clip.nameEdited && clip.name === e.name(original);
+        const followName = clip && config.followSourceName && !clip.nameEdited && clip.name === e.name(original);
         apply(current, prepared);
         if (followName) clip.name = e.name(current.id);
         e.remember(before);

@@ -4,6 +4,34 @@ const T=require('../../ui/timeline-edit'),M=require('../../ui/screen-media'),sto
 function fixture(){return {projectId:'fixture',dialogues:[],tracks:[{id:'picture',type:'media',clips:[{id:'v',start:1,len:4,mediaLink:'av',mediaRate:2,sourceOffset:.5,mediaKeys:{x:[{time:0,value:0},{time:4,value:1}]}}]},{id:'sound',type:'audio',clips:[{id:'a',start:1,len:4,mediaLink:'av',mediaRate:2,sourceOffset:.5}]},{id:'pose',type:'animation',clips:[{id:'p',start:2,len:2}]}]};}
 let serial=0;const env={id:()=>`new-${++serial}`,q:x=>Math.round(x*30)/30,frame:1/30,duration:30,signature:(t,c,d)=>JSON.stringify([t.id,c.id,c.start,c.len,c.sourceOffset||0,d.id]),offset:async(c,shift)=>c.mediaRate?M.editedOffset(c,shift,{duration:5}):(c.sourceOffset||0)+shift,clampFade(){},checkCut(){}};
 const clip=(s,id)=>T.rows(s).find(r=>r.clip.id===id).clip;
+test('删除最后一组音画片段同时清除两条空轨，粘贴时恢复原布局、位置和联动',()=>{
+  const s=fixture();
+  s.tracks[0].target='screen';s.tracks[1].target='screen';
+  s.tracks[0].compositionLayout={opacity:.7};
+  const world={id:'world',type:'world',target:'scene',clips:[]};
+  s.tracks.unshift(world);
+  const copied=T.copy(s,['v']);
+  T.remove(s,['v']);
+  assert.deepEqual(s.tracks.map(t=>t.id),['world','pose']);
+  const deleted=structuredClone(s);
+  assert.throws(()=>T.paste(s,copied,29,env),/时长/);
+  assert.deepEqual(s,deleted);
+  const [v,a]=T.paste(s,copied,4,env);
+  assert.deepEqual(s.tracks.map(t=>t.id),['world','picture','sound','pose']);
+  assert.deepEqual(s.tracks[1].compositionLayout,{opacity:.7});
+  assert.equal(clip(s,v).start,4);assert.equal(clip(s,a).mediaLink,clip(s,v).mediaLink);
+  T.remove(s,[v]);s.objects=[{id:'scene'}];
+  assert.throws(()=>T.paste(s,copied,4,env),/对象已移除/);
+});
+test('载入旧空轨保留演出画面并保持空场景，取消失效的显示位置',()=>{
+  const s=fixture();s.sceneId='trainingroom';
+  s.tracks[0].timelineAnchor='empty';
+  s.tracks.push({id:'world',type:'world',clips:[],compositionLayout:{opacity:.5}},{id:'empty',type:'scene',clips:[]});
+  T.prune(s);
+  assert.equal(s.sceneId,null);assert.ok(!s.tracks.some(t=>t.id==='empty'));
+  assert.equal(s.tracks[0].timelineAnchor,undefined);
+  assert.deepEqual(s.tracks.at(-1).compositionLayout,{opacity:.5});
+});
 test('普通视频选择保留单片段属性，持久组选择展开全部成员',()=>{const s=fixture();assert.deepEqual(T.select(s,['v']),['v']);T.group(s,['v','p'],env.id);assert.deepEqual(T.select(s,['a']),['v','a','p']);});
 test('分组闭包包括视频声音，跨轨平移保留时间差和源偏移',()=>{const s=fixture();T.group(s,['v','p'],env.id);assert.equal(T.expand(s,['a']).length,3);T.move(s,['p'],3,env);assert.deepEqual(T.rows(s).map(r=>r.clip.start),[4,4,5]);assert.equal(clip(s,'v').sourceOffset,.5);T.validate(s);T.ungroup(s,['v']);assert.equal(T.expand(s,['v']).length,2);assert.equal(T.expand(s,['p']).length,1);});
 test('锁定、超出边界和碰撞全部阻止整组移动，不部分修改',()=>{for(const kind of ['lock','bounds','collision']){const s=fixture();T.group(s,['v','p'],env.id);if(kind==='lock')s.tracks[1].locked=true;if(kind==='collision')s.tracks[2].clips.push({id:'block',start:6,len:2});const before=structuredClone(s);assert.throws(()=>T.move(s,['v'],kind==='bounds'?-2:4,env));assert.deepEqual(s,before);}});

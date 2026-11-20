@@ -70,7 +70,7 @@ module.exports=async function(win,ui,temp) {
   await win.loadFile(filename,{query:{performance:'1',faces:'1',animationLayers:'1',faceDecals:'1',arrangement:'1',
     faceNames:['b_eye.eye_001','b_eye.eye_099','b_brow.brow_001',...'001 002 003 004 008 010 012'.split(' ').map(n=>'b_mouth.mouth_'+n)].join(','),
     missingShapes:'ttmr:b_eye.eye_099',assets:'1',motions:'idle,shy',scenes:'classroom,trainingroom',uiTransitions:'2',
-    composition:'1',postEffects:'1',gizmoTrs:'1',codeUI:'1',physics:'1',physicsModes:'1'}});
+    composition:'1',postEffects:'1',screenMedia:'1',gizmoTrs:'1',codeUI:'1',physics:'1',physicsModes:'1'}});
   const fixture=await js(`(async()=>{
     await command('assets.list');
     const doc=(await command('state.get')).document,s=doc.state;
@@ -232,5 +232,6 @@ module.exports=async function(win,ui,temp) {
   for(const id of ['face','motion'])clip(grouped,id).groupId='pair';
   await load(grouped,'face');await set('#batch-type','expression');await set('#batch-member','face');
   assert.equal(await js("q('.clip-motion-name').textContent"),'微笑');
-  return 'passed';
+  const timelineMediaDrop=await require('./timeline-media-drop-ui.cjs')({win,fixture,load,js,snapshot});
+  return {clipInspector:'passed',timelineMediaDrop};
 };

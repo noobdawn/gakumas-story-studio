@@ -81,6 +81,7 @@ function validate(doc) {
   for(const t of s.tracks) {
     requireValid(obj(t)&&text(t.id)&&!trackIds.has(t.id)&&text(t.name)&&text(t.type)&&text(t.target)&&objectIds.has(t.target)&&list(t.clips), '轨道'); trackIds.add(t.id);
     if(t.type==='media')requireValid(s.objects.find(o=>o.id===t.target)?.type==='画面'&&!s.tracks.some(other=>other!==t&&other.type==='media'&&other.target===t.target),'画面图层轨道');
+    if(t.timelineAnchor!==undefined)requireValid(t.type==='media'&&text(t.timelineAnchor),'时间轴轨道位置');
     if(t.uiLayer!==undefined)requireValid(t.type==='ui'&&typeof t.uiLayer==='boolean','UI 子轨道');
     if(t.layerRole!==undefined)requireValid(['animation','expression'].includes(t.type)&&['base','overlay','legacy'].includes(t.layerRole),'动画层类型');
     if(t.layerRole==='base')requireValid(!s.tracks.some(other=>other!==t&&other.layerRole==='base'&&other.type===t.type&&other.target===t.target),'重复基础轨道');
