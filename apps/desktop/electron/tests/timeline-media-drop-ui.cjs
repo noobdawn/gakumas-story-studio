@@ -45,9 +45,12 @@ module.exports=async function({win,fixture,load,js,snapshot}){
        q('#tab-timeline').dispatchEvent(new DragEvent('dragenter',{bubbles:true,cancelable:true,dataTransfer:d}));}`);
     const p=await point(id,at),data={items:[{mimeType:'application/x-creator-asset',data:asset}],dragOperationsMask:1};
     const dispatch=type=>win.webContents.debugger.sendCommand('Input.dispatchDragEvent',{type,x:p.x,y:p.y,data});
-    await dispatch('dragEnter');await dispatch('dragOver');
-    const hint=await js("q('.timeline-asset-drop')?.textContent||''");
-    if(!options.blocked)assert.match(hint,options.create?/正上方新建/:/添加到/);
+    const frame=Math.round(p.time*30),stamp='00:00:'+String(Math.floor(frame/30)).padStart(2,'0')+':'+String(frame%30).padStart(2,'0');
+    for(const type of ['dragEnter','dragOver']){
+      await dispatch(type);
+      const hint=await js("q('.timeline-asset-drop')?.textContent||''");
+      if(!options.blocked){assert.match(hint,options.create?/正上方新建/:/添加到/);assert.ok(hint.endsWith(stamp),hint);}
+    }
     await dispatch('drop');await frames();return p.time;
   }
   await load(doc);

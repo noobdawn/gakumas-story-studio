@@ -1292,11 +1292,15 @@
     Object.assign(box.style,{left:x+'px',top:Math.max(ruler.bottom,Math.min(view.bottom-30,row?.getBoundingClientRect().top??e.clientY))+'px',maxWidth:Math.max(150,view.right-view.left-20)+'px'});
     if(view.right-x<240)box.classList.add('label-left');document.body.appendChild(box);assetDropHint=box;
   }
-  $('.timeline-scroll').addEventListener('dragover',e=>{
+  function previewAssetDrop(e){
     if(Array.from(e.dataTransfer.types).includes('application/x-creator-effect-track'))return;
     const a=externalVisual(e.dataTransfer)||timelineDropAsset(e);if(!standaloneDropAsset(a)){clearAssetDropHint();return;}
-    const target=assetDropTarget(e,a);if(!target){clearAssetDropHint();return;}e.preventDefault();e.stopPropagation();showAssetDropHint(e,a,target);
-  },true);
+    const target=assetDropTarget(e,a);if(!target){clearAssetDropHint();return;}
+    e.preventDefault();e.stopPropagation();showAssetDropHint(e,a,target);
+  }
+  const timelineScroller=$('.timeline-scroll');
+  timelineScroller.addEventListener('dragenter',previewAssetDrop,true);
+  timelineScroller.addEventListener('dragover',previewAssetDrop,true);
   $('.timeline-scroll').addEventListener('dragleave',e=>{if(!e.currentTarget.contains(e.relatedTarget))clearAssetDropHint();});
   $('.timeline-scroll').addEventListener('drop',async e=>{
     if(e.dataTransfer?.getData('application/x-creator-effect-track'))return;
