@@ -188,6 +188,8 @@ html,body{font-size:12px;background:#222428}
 
 .track-row.drop-media-above{box-shadow:inset 0 2px #83d1ee}.track-row.drop-media-above .track-lane,.track-row.drop-media-above .track-name{box-shadow:inset 0 2px #83d1ee}
 .track-row.drop-media-here .track-lane{box-shadow:inset 0 0 0 1px #83d1ee}
+.track-row.drop-clip-blocked .track-lane{box-shadow:inset 0 0 0 1px #da8980}
+.clip-drop-span{position:absolute;top:3px;bottom:3px;box-sizing:border-box;pointer-events:none;z-index:3;border:1px dashed #a7dff4;background:#72c4e237}
 .timeline-asset-drop{position:fixed;z-index:2000;pointer-events:none;min-height:30px;border-left:2px solid #b5e4fa;color:#edf7ff;background:#284a60ed;padding:5px 9px;font-size:11px;white-space:nowrap;box-shadow:0 2px 8px #0008}.timeline-asset-drop.label-left{transform:translateX(-100%);border-left:0;border-right:2px solid #b5e4fa}
 
 .character-name-preview{padding:8px 14px;border-radius:18px 18px 18px 0;overflow-wrap:anywhere;margin-bottom:12px}

@@ -1,4 +1,7 @@
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./story-timeline'));else root.CreatorTimelineEdit=factory(root.CreatorStory);})(typeof globalThis!=='undefined'?globalThis:this,function(story){
+(function(root,factory){
+  if(typeof module==='object'&&module.exports)module.exports=factory(require('./story-timeline'),require('./screen-media'),require('./composition'));
+  else root.CreatorTimelineEdit=factory(root.CreatorStory,root.CreatorScreenMedia,root.CreatorComposition);
+})(globalThis,function(story,media,composition){
   'use strict';
   const rows=s=>s.tracks.flatMap(track=>track.clips.map(clip=>({track,clip})));
   const overlaps=(a,b)=>a.start<b.start+b.len-1e-6&&a.start+a.len>b.start+1e-6;
@@ -45,6 +48,75 @@
   function validLips(s,env){const all=rows(s);return new Set(all.filter(({clip:c})=>{if(!c.lipSyncSource)return false;const a=all.find(r=>r.clip.id===c.lipSyncSource.audioClipId),d=a&&s.dialogues.find(d=>d.id===a.clip.dialogue);return a&&d&&c.start===a.clip.start&&c.len===a.clip.len&&c.lipSyncSource.signature===env.signature(a.track,a.clip,d);}).map(r=>r.clip.id));}
   function refreshLips(s,items,env,valid){for(const {clip} of items)if(clip.lipSyncSource&&valid.has(clip.id)){const source=rows(s).find(r=>r.clip.id===clip.lipSyncSource.audioClipId),d=source&&s.dialogues.find(d=>d.id===source.clip.dialogue);if(source&&d)clip.lipSyncSource.signature=env.signature(source.track,source.clip,d);}}
   function move(s,ids,delta,env,groups=true){const items=expand(s,ids,groups);story.assertFree(s,items.map(r=>r.clip.id));if(!items.length)throw Error('请选择片段');const valid=validLips(s,env),proposed=items.map(r=>({track:r.track,clip:{...r.clip,start:env.q(r.clip.start+delta)}}));checkPlacement(s,proposed,new Set(items.map(r=>r.clip.id)),env.duration);for(let i=0;i<items.length;i++)items[i].clip.start=proposed[i].clip.start;refreshLips(s,items,env,valid);return items.map(r=>r.clip.id);}
+  // Build a tentative drop without changing the live project or the undo snapshot.
+  function transfer(s,ids,primaryId,targetId,delta,env){
+    const items=expand(s,ids,false),source=items.find(r=>r.clip.id===primaryId)?.track;
+    const hover=s.tracks.find(t=>t.id===targetId);
+    if(!source||!hover||source===hover)throw Error('请选择另一条目标轨道');
+    unlocked(items);if(hover.locked)throw Error('目标轨道已锁定');
+    story.assertFree(s,items.map(r=>r.clip.id));
+    if(source.type!=='media'&&source.type!==hover.type)throw Error('请拖到相同类型的轨道');
+    const sourceIds=new Set(items.filter(r=>r.track===source).map(r=>r.clip.id));
+    if(source.target!==hover.target&&items.some(r=>r.clip.lipSyncSource&&(r.track===source||sourceIds.has(r.clip.lipSyncSource.audioClipId))))
+      throw Error('对白配音和生成的口型需要保留在对应角色的轨道');
+    const moving=new Set(items.map(r=>r.clip.id)),valid=validLips(s,env);
+    const next={...s,objects:[...s.objects],tracks:s.tracks.map(t=>({...t,clips:t.clips.filter(c=>!moving.has(c.id))}))};
+    const tracks=new Map(next.tracks.map(t=>[t.id,t])),anchor=tracks.get(targetId);
+    const entries=items.map(({track,clip})=>({source:track,track:tracks.get(track.id),
+      clip:{...clip,start:delta===0?clip.start:env.q(clip.start+delta),...(clip.lipSyncSource?{lipSyncSource:{...clip.lipSyncSource}}:{})}}));
+    const transferred=entries.filter(r=>r.source===source);
+    const links=new Set(transferred.map(r=>r.clip.mediaLink).filter(Boolean));
+    const followsVideo=r=>source.type==='media'&&r.source.type==='audio'&&r.source.target===source.target&&links.has(r.clip.mediaLink);
+    function place(entry,track){
+      if(track.clips.some(c=>overlaps(c,entry.clip)))throw Error('目标位置与已有片段重叠');
+      track.clips.push(entry.clip);entry.track=track;
+    }
+    for(const r of entries)if(r.source!==source&&!followsVideo(r))place(r,r.track);
+    let destination=anchor;
+    const created=source.type==='media'&&(anchor.type!=='media'||transferred.some(r=>anchor.clips.some(c=>overlaps(c,r.clip))));
+    if(created){
+      const original=s.objects.find(o=>o.id===source.target);
+      const layer=media.newLayer(next,original?.mediaLayout||{},env.id);
+      next.objects.push(layer);destination=media.newTrack(layer,env.id);
+      composition.placeMediaTrack(next,destination,anchor);
+    }
+    for(const r of transferred){
+      const clip=r.clip;
+      if(['animation','expression'].includes(source.type)&&source.target!==hover.target&&!env.actorAccepts(hover,clip))
+        throw Error('目标角色不支持此片段的动作或表情');
+      if(source.type==='media'){
+        media.keepLayout(clip,s.objects.find(o=>o.id===source.target),next.objects.find(o=>o.id===destination.target));
+      }else if(source.type==='audio'&&hover.clips.some(c=>!!c.dialogue!==!!clip.dialogue)){
+        throw Error('对白配音与独立声音使用不同轨道');
+      }else if(source.type==='animation'&&source.layerRole!==hover.layerRole){
+        const motion=env.motion(clip.assetId);
+        if(!motion)throw Error('当前动作素材不可用，无法更换动画层');
+        if(hover.layerRole==='overlay')clip.blendMode=motion.isAdditive?'additive':'override';
+        else if(motion.isAdditive)throw Error('原生增量动作只能放在叠加轨道');
+        else delete clip.blendMode;
+      }else if(clip.propertyKeys?.scale&&!['角色','道具'].includes(s.objects.find(o=>o.id===hover.target)?.type)){
+        throw Error('目标对象不支持缩放关键帧');
+      }
+      place(r,destination);
+    }
+    for(const r of entries.filter(followsVideo)){
+      // Keep the row under the pointer when the video is dropped above its own sound.
+      let sound=r.track;
+      if(sound!==anchor){
+        sound=media.linkedSoundTrack(next.tracks,destination,r.clip,env.id,r.source.enabled!==false);
+        if(!next.tracks.includes(sound))next.tracks.push(sound);
+      }else if(r.source.clips.every(c=>links.has(c.mediaLink)))sound.target=destination.target;
+      place(r,sound);
+    }
+    checkPlacement(s,entries,moving,env.duration);
+    for(const track of new Set(entries.map(r=>r.track)))track.clips.sort((a,b)=>a.start-b.start);
+    if(s.transitions){
+      next.transitions=s.transitions.map(x=>x.trackId===source.id&&sourceIds.has(x.leftId)&&sourceIds.has(x.rightId)?{...x,trackId:destination.id}:x)
+        .filter(x=>composition.join(next,x));
+    }
+    refreshLips(next,entries,env,valid);
+    return {state:next,track:destination,created};
+  }
   function copy(s,ids,groups=true){
     const items=expand(s,ids,groups);
     if(!items.length)throw Error('请选择要复制的片段');
@@ -108,5 +180,5 @@
     s.dialogues.push(...s.dialogues.filter(d=>dialogues.has(d.id)).map(d=>({...structuredClone(d),id:dialogues.get(d.id)})));
     for(const p of prepared){Object.assign(p.row.clip,p.left);p.row.track.clips.push(p.right);p.row.track.clips.sort((a,b)=>a.start-b.start);}refreshLips(s,rows(s).filter(r=>affected.some(a=>a.clip.id===r.clip.id)||[...idsMap.values()].includes(r.clip.id)),env,new Set([...valid,...[...valid].map(x=>idsMap.get(x))]));return prepared.flatMap(p=>[p.left.id,p.right.id]);
   }
-  return {rows,select,expand,prune,validate,group,ungroup,move,copy,paste,remove,cut,slice};
+  return {rows,select,expand,prune,validate,group,ungroup,move,transfer,copy,paste,remove,cut,slice};
 });

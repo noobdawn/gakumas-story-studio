@@ -4,6 +4,75 @@ const T=require('../../ui/timeline-edit'),M=require('../../ui/screen-media'),sto
 function fixture(){return {projectId:'fixture',dialogues:[],tracks:[{id:'picture',type:'media',clips:[{id:'v',start:1,len:4,mediaLink:'av',mediaRate:2,sourceOffset:.5,mediaKeys:{x:[{time:0,value:0},{time:4,value:1}]}}]},{id:'sound',type:'audio',clips:[{id:'a',start:1,len:4,mediaLink:'av',mediaRate:2,sourceOffset:.5}]},{id:'pose',type:'animation',clips:[{id:'p',start:2,len:2}]}]};}
 let serial=0;const env={id:()=>`new-${++serial}`,q:x=>Math.round(x*30)/30,frame:1/30,duration:30,signature:(t,c,d)=>JSON.stringify([t.id,c.id,c.start,c.len,c.sourceOffset||0,d.id]),offset:async(c,shift)=>c.mediaRate?M.editedOffset(c,shift,{duration:5}):(c.sourceOffset||0)+shift,clampFade(){},checkCut(){}};
 const clip=(s,id)=>T.rows(s).find(r=>r.clip.id===id).clip;
+function transferFixture(){
+  const picture=(id,at,asset='still')=>({id,name:id,assetId:asset,start:at,len:2});
+  const layer=(id,x)=>({id,name:id,type:'画面',mediaLayout:{...M.preset('full'),x}});
+  const video={...picture('A',2,'movie'),sourceOffset:.25,mediaRate:1.5,mediaLink:'av',mediaKeys:{opacity:[{time:0,value:.25},{time:2,value:1}]}};
+  const sound={...picture('audio-A',2,'movie'),sourceOffset:.25,mediaRate:1.5,mediaLink:'av',volume:.4};
+  return {objects:[layer('one',.2),layer('three',-.1)],dialogues:[],compositionVersion:1,transitions:[],
+    tracks:[{id:'first',name:'第一轨',type:'media',target:'one',clips:[video]},
+      {id:'fx',name:'滤镜',type:'visualFilter',target:'scene',clips:[picture('fx1',17)]},
+      {id:'third',name:'第三轨',type:'media',target:'three',clips:[picture('reserved',8)]},
+      {id:'sound1',name:'关联声音一',type:'audio',target:'one',clips:[sound]},
+      {id:'sound3',name:'关联声音三',type:'audio',target:'three',clips:[{...picture('other-audio',8),mediaLink:'other'}]},
+      {id:'cam',name:'相机',type:'camera',target:'cam',clips:[picture('shot',5)]}]};
+}
+test('已有视频跨轨复用目标层和声音轨，保留布局、裁剪、关键帧与标识，原工程可直接撤销',()=>{
+  const s=transferFixture(),before=structuredClone(s),oldLayout=M.layout(s.objects[0],clip(s,'A'),1);
+  const result=T.transfer(s,['A'],'A','third',0,env),next=result.state;
+  assert.deepEqual(s,before);assert.equal(result.created,false);
+  assert.equal(result.track.id,'third');assert.equal(clip(next,'A').start,2);
+  assert.deepEqual(M.layout(next.objects[1],clip(next,'A'),1),oldLayout);
+  assert.deepEqual({...clip(next,'A'),mediaLayout:undefined},{...clip(s,'A'),mediaLayout:undefined});
+  assert.deepEqual(clip(next,'audio-A'),clip(s,'audio-A'));
+  assert(next.tracks.find(t=>t.id==='sound3').clips.some(c=>c.id==='audio-A'));
+  T.prune(next);assert.deepEqual(next.tracks.map(t=>t.id),['fx','third','sound3','cam']);
+});
+test('既有片段跨轨忽略原轨障碍，重叠与跨类型媒体落点只在目标上方建层，联动锁定拒绝整次提交',()=>{
+  const s=transferFixture();s.tracks[0].clips.push({id:'block',start:4,len:2});
+  assert.equal(T.transfer(s,['A'],'A','third',2,env).track.id,'third');
+  for(const [target,delta] of [['third',6],['cam',0]]){
+    const r=T.transfer(s,['A'],'A',target,delta,env),n=r.state.tracks.indexOf(r.track);
+    assert(r.created);assert.equal(r.state.tracks[n+1].id,target);
+    assert.equal(clip(r.state,'A').start,2+delta);
+    assert.deepEqual(clip(r.state,'audio-A'),{...clip(s,'audio-A'),start:2+delta});
+    assert.equal(r.state.tracks.find(t=>t.clips.some(c=>c.id==='audio-A')).target,r.track.target);
+  }
+  for(const id of ['first','third','sound1']){
+    const track=s.tracks.find(t=>t.id===id);track.locked=true;
+    const before=structuredClone(s);assert.throws(()=>T.transfer(s,['A'],'A','third',0,env),/锁定/);assert.deepEqual(s,before);delete track.locked;
+  }
+  assert.throws(()=>T.transfer(s,['A'],'A','third',-8,env),/时长/);
+});
+test('一起跨轨的两个画面保留接缝，单独移出一侧解除接缝，同型声音可以独立换轨',()=>{
+  const s=transferFixture();s.tracks[0].clips.push({id:'B',name:'B',start:4,len:1});
+  s.transitions=[{id:'seam',trackId:'first',leftId:'A',rightId:'B',duration:.5,kind:'dissolve'}];
+  const pair=T.transfer(s,['A','B'],'A','third',0,env);
+  assert.deepEqual(pair.state.transitions,[{...s.transitions[0],trackId:'third'}]);
+  assert.deepEqual(T.transfer(s,['A'],'A','third',0,env).state.transitions,[]);
+  assert.throws(()=>T.transfer(s,['audio-A'],'audio-A','sound3',1,env),/重叠/);
+  const moved=T.transfer(s,['audio-A'],'audio-A','sound3',-1,env).state;
+  assert(moved.tracks.find(t=>t.id==='sound3').clips.some(c=>c.id==='audio-A'));
+  assert.equal(clip(moved,'A').start,1);assert.equal(moved.tracks.find(t=>t.clips.some(c=>c.id==='A')).id,'first');
+  assert.throws(()=>T.transfer(s,['audio-A'],'audio-A','cam',0,env),/相同类型/);
+});
+
+test('同类型表情、动作和 UI 可以换轨，保留角色通道、增量动作及锁定约束',()=>{
+  const s=transferFixture(),piece={id:'piece',name:'片段',assetId:'pose',start:3,len:1,propertyKeys:{weight:[{time:0,value:70}]}};
+  const from={id:'from',name:'来源',type:'expression',target:'one',clips:[piece]},to={id:'to',name:'目的',type:'expression',target:'three',clips:[]};
+  s.tracks.push(from,to);
+  const actorEnv={...env,actorAccepts:()=>true,motion:()=>({isAdditive:false})};
+  const transfer=()=>T.transfer(s,['piece'],'piece','to',0,actorEnv);
+  assert.deepEqual(transfer().track.clips[0],piece);
+  assert.throws(()=>T.transfer(s,['piece'],'piece','to',0,{...actorEnv,actorAccepts:()=>false}),/目标角色/);
+  from.type=to.type='animation';from.layerRole='overlay';to.layerRole='base';piece.blendMode='override';
+  assert.equal(transfer().track.clips[0].blendMode,undefined);assert.equal(piece.blendMode,'override');
+  assert.throws(()=>T.transfer(s,['piece'],'piece','to',0,{...actorEnv,motion:()=>({isAdditive:true})}),/增量/);
+  from.type=to.type='ui';delete from.layerRole;delete to.layerRole;delete piece.blendMode;
+  piece.uiKind='code';piece.codeUI={html:'<b>字幕</b>'};
+  assert.deepEqual(transfer().track.clips[0],piece);
+});
+
 test('删除最后一组音画片段同时清除两条空轨，粘贴时恢复原布局、位置和联动',()=>{
   const s=fixture();
   s.tracks[0].target='screen';s.tracks[1].target='screen';

@@ -43,12 +43,8 @@ globalThis.CreatorScreenMediaEditor={create(env){
  }
  const overlaps=(clip,start,len)=>start<clip.start+clip.len-1e-6&&start+len>clip.start+1e-6;
  function addLinkedAudio(track,clip){
-  let sound=state().tracks.find(t=>t.type==='audio'&&t.target===track.target&&!t.locked&&t.enabled!==false
-    &&t.clips.every(c=>c.mediaLink&&!overlaps(c,clip.start,clip.len)));
-  if(!sound){
-   sound={id:env.id(),name:track.name+' · 视频声音',type:'audio',target:track.target,clips:[]};
-   state().tracks.push(sound);
-  }
+  const sound=M.linkedSoundTrack(state().tracks,track,clip,env.id);
+  if(!state().tracks.includes(sound))state().tracks.push(sound);
   clip.mediaLink=env.id();
   sound.clips.push({id:env.id(),name:clip.name+' · 声音',assetId:clip.assetId,start:clip.start,len:clip.len,
     sourceOffset:clip.sourceOffset,mediaRate:clip.mediaRate||1,mediaLink:clip.mediaLink,audioLoop:clip.loop===true,volume:1});
@@ -76,10 +72,9 @@ globalThis.CreatorScreenMediaEditor={create(env){
    a.visual=info;
    const localAsset=s.assets.find(x=>x.id===a.id);if(localAsset)localAsset.visual=info;
    if(!track){
-    const o=object||{id:env.id(),name:'画面 '+(s.objects.filter(o=>o.type==='画面').length+1),type:'画面',icon:'image',
-      parent:'scene',components:['media'],visible:true,mediaLayout:M.preset(info.kind==='video'?'full':'center')};
+    const o=object||M.newLayer(s,M.preset(info.kind==='video'?'full':'center'),env.id);
     if(!object)s.objects.push(o);
-    track={id:env.id(),name:o.name,type:'media',target:o.id,clips:[]};
+    track=M.newTrack(o,env.id);
     if(options.newTrackOnOverlap){CreatorComposition.placeMediaTrack(s,track,anchor);positioned.push(track.id);}
     else s.tracks.push(track);
    }

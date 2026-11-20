@@ -128,5 +128,6 @@ module.exports=async function({win,fixture,load,js,snapshot}){
     assert.equal((await state()).tracks.find(t=>t.type===type).clips[0].assetId,asset);
   }
   assert.deepEqual((await state()).tracks.filter(t=>!t.clips.length).map(t=>t.id),[world.id]);
+  await require('./timeline-clip-move-ui.cjs')({win,js,snapshot,load,doc});
   return 'passed';
 };
