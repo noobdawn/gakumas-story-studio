@@ -43,6 +43,10 @@ runtime-paths.js 与 runtime_paths.py 从程序所在位置解析源码与运行
 
 工作台按同一工程快照驱动预览与导出。宿主通过 Player 随附的 `creator-physics-modes-v1` 标记识别四种模式。切换模式时，每个角色实例重新初始化自己的求解历史，在暂停的同一帧也会应用新选择。[模式与兼容请求](../../apps/desktop/ui/render-settings.js) · [时间轴步进](../../unity/CreatorPlayer/Assets/Runtime/ActorPhysicsPlayback.cs)
 
+启用物理时，工作台在状态包标明工程帧率 `physicsFrameRate` 和从零开始的工程帧号 `physicsFrame`。整数帧按 `frame * 60 / rate` 的整数商取得已完成的物理步数。帧间定位传帧号 −1，Player 沿用双精度演出时间。早期状态包也可从合成时间或演员自身的动作时钟推进。反复请求同一姿势和时刻只呈现一次。[工作台快照](../../apps/desktop/ui/app.js) · [固定步回归](../../unity/CreatorPlayer/Assets/Editor/CreatorMotionTransitionTests.cs)
+
+GSS、Quartz 和 Hybrid 都在显示前用变形后的发片检查额头。连续播放时，每束前发记住上次实际显示的局部关节旋转。修正幅度随经过的时间和骨链本身的运动变化，插值后的发片还会对当帧脸部三角形复查。共享顶点触及皮肤时会重试上一姿势，必要时采用已检查的当帧解。Hybrid 在修正尚未到位时逐帧复查。跳时、换解算方式和重新初始化角色会清除这一段接触历史。[额头网格接触](../../unity/CreatorPlayer/Assets/Runtime/FringeFaceContact.cs)
+
 GSS 用经典骨链求解二次运动。Quartz 先根据当前服装或发型的模型驱动更新锚点，再按演出时钟以 60 Hz 积分，应用模型提供的各轴限位与横向连接。Hybrid 沿用这一步，在被识别为前发和鬓角的骨段上分别使用 12° 和 22° 的局部软限幅，同时修正发梢的位置历史。额头接触精查以 15 Hz 为目标，中间帧复用每束发丝的修正权重。姿势、位置或额头表面变化超过复用条件时，当帧重新检查。[模型驱动](../../unity/CreatorPlayer/Assets/Runtime/ActorQuartzPose.cs) · [骨链与限幅](../../unity/CreatorPlayer/Assets/Runtime/ActorClothPhysics.cs) · [额头接触](../../unity/CreatorPlayer/Assets/Runtime/FringeFaceContact.cs)
 
 ## 界面布局与任务进度（2026-11-15）

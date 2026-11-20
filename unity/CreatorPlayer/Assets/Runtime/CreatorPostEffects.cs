@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 [Serializable] public class CreatorEffectParameters {public float tone,bloom,threshold,radius,softness,darkness,edgeProtection,lineJitter,bandStrength,bandWidth,rollSpeed,chromaOffset,signalNoise;}
 [Serializable] public class CreatorEffectLayer {public int effectVersion;public string effectType;public CreatorEffectParameters parameters;public float weight,strength;public int seed;public CreatorCompositionLayout layout;}
 [Serializable] public class CreatorEffectTarget {public string target;public CreatorEffectLayer[] layers;}
-[Serializable] public class CreatorEffectState {public bool enabled,serial;public float time;public CreatorEffectTarget[] targets;}
+[Serializable] public class CreatorEffectState {public bool enabled,serial;public double time;public CreatorEffectTarget[] targets;}
 
 // Independent creative compositor, not the game's original post-processing.
 // Native material replay against black/white recovers coverage without replacing
@@ -17,7 +17,7 @@ public sealed class CreatorPostEffects:IDisposable {
  public bool Enabled=>state!=null&&state.enabled;
  public CreatorPostEffects(Shader shader){if(!shader)throw new Exception("Story effects shader missing");material=new Material(shader);}
  public void Set(CreatorEffectState s){
-  if(s!=null){if(float.IsNaN(s.time)||float.IsInfinity(s.time)||s.time<0||s.time>3600||s.targets==null||s.targets.Length>5)throw new Exception("Invalid story effects");var ids=new HashSet<string>();foreach(var t in s.targets){if(t==null||!new[]{"background","actors","media","dialogue","transition"}.Contains(t.target)||!ids.Add(t.target)||t.layers==null||t.layers.Length>32)throw new Exception("Invalid effect target");ValidateLayers(t.layers);}}state=s;
+  if(s!=null){if(double.IsNaN(s.time)||s.time<0||s.time>3600||s.targets==null||s.targets.Length>5)throw new Exception("Invalid story effects");var ids=new HashSet<string>();foreach(var t in s.targets){if(t==null||!new[]{"background","actors","media","dialogue","transition"}.Contains(t.target)||!ids.Add(t.target)||t.layers==null||t.layers.Length>32)throw new Exception("Invalid effect target");ValidateLayers(t.layers);}}state=s;
  }
  RenderTexture Make(int w,int h,int depth=0,int samples=1){var r=RenderTexture.GetTemporary(w,h,depth,RenderTextureFormat.ARGBHalf,RenderTextureReadWrite.Linear,samples);r.filterMode=FilterMode.Bilinear;r.wrapMode=TextureWrapMode.Clamp;temporaries.Add(r);return r;}
  public void Clear(){foreach(var r in temporaries)RenderTexture.ReleaseTemporary(r);temporaries.Clear();}
@@ -47,7 +47,7 @@ public sealed class CreatorPostEffects:IDisposable {
   ValidateLayers(layers);Texture lower=clean;
   foreach(var l in layers??Array.Empty<CreatorEffectLayer>()){
    if(l.weight<=0||l.strength<=0)continue;
-   var next=Make(w,h);material.SetTexture("_Clean",serial?lower:clean);material.SetTexture("_Lower",lower);material.SetFloat("_Weight",l.weight);material.SetFloat("_Strength",l.strength);material.SetFloat("_Seed",l.seed);material.SetFloat("_StoryTime",state?.time??0);
+   var next=Make(w,h);material.SetTexture("_Clean",serial?lower:clean);material.SetTexture("_Lower",lower);material.SetFloat("_Weight",l.weight);material.SetFloat("_Strength",l.strength);material.SetFloat("_Seed",l.seed);material.SetFloat("_StoryTime",(float)(state?.time??0));
    SetLayout(l.layout);var p=l.parameters;int pass;
    switch(l.effectType){
     case "memory":pass=0;material.SetVector("_EffectParams",new Vector4(p.tone,p.bloom,p.threshold,p.radius));break;

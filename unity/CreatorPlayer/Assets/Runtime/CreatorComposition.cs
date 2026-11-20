@@ -12,7 +12,7 @@ using UnityEngine;
  public CreatorUIDraw[] draws;
 }
 [Serializable] public sealed class CreatorCompositionState {
- public int version;public float time;public CreatorCompositionNode[] nodes;
+ public int version;public double time;public CreatorCompositionNode[] nodes;
  public static void Validate(CreatorCompositionState state,CreatorMediaDraw[] media,CreatorUIGraph ui) {
   if(state==null)return;
   if(state.version!=1||!Finite(state.time,0,3600)||state.nodes==null||state.nodes.Length>256)throw new Exception("Invalid composition");
@@ -33,7 +33,7 @@ using UnityEngine;
    }
   }
  }
- static bool Finite(float v,float min,float max)=>!float.IsNaN(v)&&!float.IsInfinity(v)&&v>=min&&v<=max;
+ static bool Finite(double v,double min,double max)=>v>=min&&v<=max;
 }
 
 [Serializable] public sealed class CreatorCompositionLayout {

@@ -47,6 +47,21 @@ public static class CreatorMotionTransitionTests {
    int count=evaluations;Hold(.1f,.1f);
    if(evaluations!=count)throw new Exception("Repeated state advanced physics");
    Hold(.1f,.8f);Hold(0,0);Hold(1,1);
+   foreach(int rate in new[]{24,25,30,60}){
+    for(int index=0;index<=3600*rate;index++){
+     var grid=ActorPhysicsPlayback.Clock.FromFrame(index,rate);
+     ActorPhysicsPlayback.Clock seconds=index/(double)rate;
+     var legacy=ActorPhysicsPlayback.Clock.FromLegacyTime((float)grid.seconds);
+     if(grid.tick!=index*60/rate || seconds.tick!=grid.tick || legacy.tick!=grid.tick)
+      throw new Exception("Timeline frame drifted off the fixed physics grid");
+    }
+   }
+   int samples=0;
+   for(int index=1740;index<=1920;index++){
+    clock.Apply(true,ActorPhysicsPlayback.Clock.FromFrame(index,30),"held",0,1,null,root.transform,solvers,(t,l)=>samples++);
+    if(samples!=(index==1740?1:2))throw new Exception("30 fps hold should sample exactly two 60 Hz poses per frame");
+    samples=0;
+   }
    TestPlacement();
    TestForehead();
    Debug.Log("Motion transition regression passed: three blend/direct cycles; inactive inputs released; direct pose and root stable.");

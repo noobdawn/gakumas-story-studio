@@ -13,7 +13,21 @@ public sealed class ActorPhysicsPlayback
         public bool Same(BlendPose other)=>motion==other.motion && time==other.time && weight==other.weight;
     }
     const float Step = 1f / 60f;
-    float previousClock = -1, previousBase;
+    public readonly struct Clock
+    {
+        public readonly double seconds;
+        public readonly int tick;
+        Clock(double seconds,int tick){this.seconds=seconds;this.tick=tick;}
+        public static Clock FromFrame(int frame,int rate) => new Clock(frame/(double)rate,frame*60/rate);
+        public static implicit operator Clock(double time) => new Clock(time,(int)Math.Floor(time*60+1e-9));
+        public static Clock FromLegacyTime(float time)
+        {
+            int nearest=(int)Math.Round((double)time*60);
+            return (float)(nearest/60.0)==time?FromFrame(nearest,60):(Clock)(double)time;
+        }
+    }
+    Clock previousClock = -1d;
+    float previousBase;
     string previousMotion;
     string previousPlacement;
     CreatorMotionLayer[] previousLayers;
@@ -23,6 +37,7 @@ public sealed class ActorPhysicsPlayback
     ActorPhysicsMode previousMode=ActorPhysicsMode.Quartz;
     BlendPose previousBlend;
     public int Revision { get; private set; }
+    public double DisplayTime => previousClock.seconds;
 
     public static ActorPhysicsMode ResolveMode(string method,bool legacyEnabled)
     {
@@ -54,9 +69,7 @@ public sealed class ActorPhysicsPlayback
         return true;
     }
 
-    static int Tick(float time) => (int)Math.Floor((double)time * 60 + .0001);
-
-    public void Apply(bool enabled, float clock, string motion, float localTime, float duration,
+    public void Apply(bool enabled, Clock clock, string motion, float localTime, float duration,
                       CreatorMotionLayer[] layers, Transform root, ActorClothPhysics[] solvers,
                       Action<float, CreatorMotionLayer[]> sample, string placement = null, ActorPhysicsMode mode = ActorPhysicsMode.Quartz,
                       BlendPose blend = default, Action<float,float> sampleBlend = null)
@@ -69,20 +82,20 @@ public sealed class ActorPhysicsPlayback
         layers = layers ?? Array.Empty<CreatorMotionLayer>();
         if (!enabled || solvers.Length == 0)
         {
-            if (previousClock >= 0) foreach (var solver in solvers) solver.ResetSimulation();
+            if (previousClock.seconds >= 0) foreach (var solver in solvers) solver.ResetSimulation();
             previousClock = -1;
             sample(localTime, layers);
             Revision++;
             return;
         }
-        bool sameLayout = previousClock >= 0 && SameLayout(previousLayers, layers);
-        bool sameMoment = previousClock == clock;
+        bool sameLayout = previousClock.seconds >= 0 && SameLayout(previousLayers, layers);
+        bool sameMoment = previousClock.seconds == clock.seconds;
         bool moved = position != root.position || rotation != root.rotation || scale != root.lossyScale;
         bool samePose = previousMotion == motion && previousBase == localTime && sameLayout && SameValues(previousLayers, layers) && previousBlend.Same(blend);
         if (sameMoment && samePose && !moved) { previousPlacement=placement; return; }
 
-        float elapsed=clock-previousClock;
-        if (previousClock < 0 || elapsed < 0 || elapsed > .25f || (sameMoment && !samePose))
+        double elapsed=clock.seconds-previousClock.seconds;
+        if (previousClock.seconds < 0 || elapsed < 0 || elapsed > .25 || (sameMoment && !samePose))
         {
             foreach (var solver in solvers) solver.ResetSimulation();
             sample(localTime, layers);
@@ -93,7 +106,7 @@ public sealed class ActorPhysicsPlayback
             float delta=localTime-previousBase;
             if(delta<0 && duration>0 && Mathf.Abs(delta+duration)<=elapsed+.001f)delta+=duration;
             bool poseCut=previousMotion!=motion || previousBlend.motion!=blend.motion || Mathf.Abs(delta)>elapsed+Step;
-            bool movedPlacement=moved && (sameMoment || placement!=previousPlacement || LargeRootStep(root,elapsed));
+            bool movedPlacement=moved && (sameMoment || placement!=previousPlacement || LargeRootStep(root,(float)elapsed));
             if(poseCut)
             {
                 sample(localTime,layers);
@@ -107,13 +120,13 @@ public sealed class ActorPhysicsPlayback
             // Editing only the actor transform at a paused frame already moved the visible
             // hierarchy. Its Verlet samples must move with it, without an extra solver tick.
             if(sameMoment){RememberRoot(root,placement);return;}
-            int first = Tick(previousClock) + 1, last = Tick(clock);
+            int first = previousClock.tick + 1, last = clock.tick;
             float end=previousBase+delta;
             CreatorMotionLayer[] intermediate = null;
             bool sampledFinal = false;
             for (int tick = first; tick <= last; tick++)
             {
-                float alpha = Mathf.Clamp01((float)((tick / 60.0 - previousClock) / (clock - previousClock)));
+                float alpha = Mathf.Clamp01((float)((tick / 60.0 - previousClock.seconds) / elapsed));
                 sampledFinal = alpha >= .9999f;
                 var pose = layers;
                 if (!sampledFinal && sameLayout && layers.Length > 0)
