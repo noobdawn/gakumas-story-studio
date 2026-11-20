@@ -298,6 +298,8 @@ def main():
                                  '-screen-fullscreen', '0', '-screen-width', '800', '-screen-height', '720',
                                  '-logFile', str(Path(output) / 'player.log')]
         command += ['-creator-media-root',str(library_root)]
+        if (player.parent/'creator-screen-media-v1').is_file():
+            command += ['-creator-media-decoder', visual_media.binary('ffmpeg')]
         if rendering_shaders: command += ['-creator-render-shaders',str(rendering_shaders)]
         if ui_graph_capable and args.catalog_root: command += ['-creator-ui-data',str((args.catalog_root/'player-view/ui-transitions-v2').resolve())]
         if background_entries and args.catalog_root: command += ['-creator-backgrounds',str((args.catalog_root/'player-view/backgrounds').resolve())]
