@@ -63,6 +63,7 @@ public static class CreatorMotionTransitionTests {
     samples=0;
    }
    TestPlacement();
+   TestHairDuringBlend();
    TestForehead();
    Debug.Log("Motion transition regression passed: three blend/direct cycles; inactive inputs released; direct pose and root stable.");
   } finally {set("mainLayers",null);set("graph",default(PlayableGraph));layers.Dispose();if(graph.IsValid())graph.Destroy();UnityEngine.Object.DestroyImmediate(root);UnityEngine.Object.DestroyImmediate(a);UnityEngine.Object.DestroyImmediate(b);}
@@ -107,6 +108,52 @@ public static class CreatorMotionTransitionTests {
    Advance(13/30f,"new pose");
    if(Vector3.Distance(refSolver.GetTipPositions()[0],placed.transform.InverseTransformPoint(movedSolver.GetTipPositions()[0]))<.0002f)throw new Exception("Continuous root movement should retain cloth inertia");
   } finally {UnityEngine.Object.DestroyImmediate(placed);UnityEngine.Object.DestroyImmediate(reference);}
+ }
+ static void TestHairDuringBlend() {
+  var rigs=new GameObject[2];
+  var heads=new Transform[2];
+  var tips=new Transform[2];
+  var solvers=new ActorClothPhysics[2][];
+  var clocks=new[]{new ActorPhysicsPlayback(),new ActorPhysicsPlayback()};
+  var rest=new Vector3(.10f,-.06f,.02f);
+  try {
+   for(int i=0;i<2;i++){
+    rigs[i]=new GameObject("Blend test actor");
+    heads[i]=new GameObject("Head").transform;heads[i].SetParent(rigs[i].transform,false);
+    var hair=new GameObject("Test hair").transform;hair.SetParent(heads[i],false);
+    var bone=new GameObject("SideHair").transform;bone.SetParent(hair,false);
+    tips[i]=new GameObject("Tip").transform;tips[i].SetParent(bone,false);tips[i].localPosition=rest;
+    var solver=hair.gameObject.AddComponent<ActorClothPhysics>();solver.simulateInLateUpdate=false;
+    solver.includeOtherDynamic=true;solver.gravityScale=0;
+    solver.Configure(hair,new ActorClothPhysics.Data{source="test_hair",dynamic=new[]{
+     new ActorClothPhysics.BoneData{name="SideHair",stiffness=.03f,damping=.25f},
+     new ActorClothPhysics.BoneData{name="Tip"}},@static=Array.Empty<ActorClothPhysics.ColliderData>()});
+    solvers[i]=new[]{solver};
+   }
+   foreach(int rate in new[]{24,25,30,60}){
+    float bend=0;
+    for(int frame=0;frame<=rate;frame++){
+     var time=ActorPhysicsPlayback.Clock.FromFrame(frame,rate);
+     for(int i=0;i<2;i++){
+      // Both rigs have the same keyed head movement. Only the second mixes
+      // in a rigid offset between clips, including a change of orientation.
+      float weight=i==0?0:Mathf.SmoothStep(0,1,(float)time.seconds);
+      var blend=new ActorPhysicsPlayback.BlendPose{motion="alternate",time=(float)time.seconds,weight=weight};
+      clocks[i].Apply(true,time,"base",(float)time.seconds,2,null,rigs[i].transform,solvers[i],
+       (t,l)=>{
+        var rotation=Quaternion.Euler(0,32*weight,0);
+        var animated=new Vector3(.022f*Mathf.Sin(t*9),0,0);
+        heads[i].SetLocalPositionAndRotation(weight*new Vector3(0,.015f,.065f)+rotation*animated,rotation);
+       },mode:ActorPhysicsMode.Hybrid,blend:blend,sampleBlend:(t,w)=>weight=w);
+     }
+     var reference=heads[0].InverseTransformPoint(tips[0].position);
+     var mixed=heads[1].InverseTransformPoint(tips[1].position);
+     if(Vector3.Distance(reference,mixed)>.00015f)throw new Exception("Changing blend weight injected hair motion at "+rate+" fps");
+     bend=Mathf.Max(bend,Vector3.Distance(rest,reference));
+    }
+    if(bend<.002f)throw new Exception("Keyed head motion lost its hair inertia during a fade");
+   }
+  } finally {foreach(var rig in rigs)if(rig)UnityEngine.Object.DestroyImmediate(rig);}
  }
  static void TestForehead() {
   var mesh=new Mesh();

@@ -124,6 +124,25 @@ public sealed class ActorPhysicsPlayback
             float end=previousBase+delta;
             CreatorMotionLayer[] intermediate = null;
             bool sampledFinal = false;
+            bool followBlend=!poseCut && mode==ActorPhysicsMode.Hybrid && sampleBlend!=null &&
+                previousBlend.weight!=blend.weight && Array.Exists(solvers,solver=>solver.IsHair);
+            float lastWeight=previousBlend.weight;
+            void SamplePose(float t,CreatorMotionLayer[] pose,float blendTime,float weight)
+            {
+                bool changing=followBlend && weight!=lastWeight;
+                if(changing)
+                {
+                    // Same clip times and layers on both sides isolate the change
+                    // introduced by the mixer from the actor's own head movement.
+                    sampleBlend(blendTime,lastWeight);
+                    sample(t,pose);
+                    foreach(var solver in solvers)if(solver.IsHair)solver.CaptureBlendFrame();
+                }
+                if(!poseCut)sampleBlend?.Invoke(blendTime,weight);
+                sample(t,pose);
+                if(changing)foreach(var solver in solvers)if(solver.IsHair)solver.FollowBlendFrame();
+                lastWeight=weight;
+            }
             for (int tick = first; tick <= last; tick++)
             {
                 float alpha = Mathf.Clamp01((float)((tick / 60.0 - previousClock.seconds) / elapsed));
@@ -148,15 +167,14 @@ public sealed class ActorPhysicsPlayback
                 }
                 float t = poseCut ? localTime : Mathf.Lerp(previousBase, end, alpha);
                 if (t >= duration && duration > 0) t -= duration;
-                if(sampleBlend!=null && !poseCut)
-                    sampleBlend(Mathf.Lerp(previousBlend.time,blend.time,alpha),Mathf.Lerp(previousBlend.weight,blend.weight,alpha));
-                sample(sampledFinal ? localTime : t, pose);
+                SamplePose(sampledFinal ? localTime : t,pose,Mathf.Lerp(previousBlend.time,blend.time,alpha),
+                    Mathf.Lerp(previousBlend.weight,blend.weight,alpha));
                 foreach (var solver in solvers) solver.Step(Step);
             }
             if (!sampledFinal)
             {
-                sampleBlend?.Invoke(blend.time,blend.weight);
-                sample(localTime, layers);
+                if(poseCut)sampleBlend?.Invoke(blend.time,blend.weight);
+                SamplePose(localTime,layers,blend.time,blend.weight);
                 foreach (var solver in solvers) solver.ApplyCurrentPose();
             }
         }

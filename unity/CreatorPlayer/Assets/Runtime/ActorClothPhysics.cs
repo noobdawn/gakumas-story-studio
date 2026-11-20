@@ -124,6 +124,8 @@ public sealed class ActorClothPhysics : MonoBehaviour
     bool UseAuthored => Mode == ActorPhysicsMode.Quartz || Mode == ActorPhysicsMode.Hybrid;
     ActorQuartzPose ActiveQuartz => UseAuthored ? quartz : null;
     bool isHair, hasPreviousAnchor;
+    Matrix4x4 beforeBlend;
+    internal bool IsHair => isHair;
     public int QuartzDrivers => ActiveQuartz?.Count ?? 0;
     public int SkirtDrivers => ActiveQuartz?.Skirts ?? 0;
     public int HairDrivers => ActiveQuartz?.Hair ?? 0;
@@ -339,6 +341,16 @@ public sealed class ActorClothPhysics : MonoBehaviour
         if(fringeContact)fringeContact.Invalidate();
         foreach(var s in segments)Transport(s,fromPrevious);
         foreach(var anchor in anchors)anchor.lastInverse=anchor.bone.worldToLocalMatrix;
+    }
+    internal void CaptureBlendFrame() => beforeBlend=transform.worldToLocalMatrix;
+    internal void FollowBlendFrame()
+    {
+        // Both samples follow only the rigid change of head frame caused by the
+        // blend weight. Motion within either clip still reaches the Verlet solver.
+        var map=transform.localToWorldMatrix*beforeBlend;
+        foreach(var s in segments)Transport(s,map);
+        var inverse=map.inverse;
+        foreach(var anchor in anchors)anchor.lastInverse=anchor.lastInverse*inverse;
     }
     public void MoveHistoryToCurrentAnchors()
     {
