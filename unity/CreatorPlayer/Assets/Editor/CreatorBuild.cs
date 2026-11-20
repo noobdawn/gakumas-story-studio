@@ -65,6 +65,7 @@ public static class CreatorBuild {
    if(exitCode==0){
     File.WriteAllText(Path.Combine(output,"creator-actor-contacts-v1"),"face-torso-garment-timeline\n");
     File.WriteAllText(Path.Combine(output,"creator-actor-contacts-v2"),"placement-and-fringe-surface\n");
+    File.WriteAllText(Path.Combine(output,"creator-physics-modes-v1"),"none,gss,quartz,hybrid\n");
     File.WriteAllText(Path.Combine(output,"creator-authored-quartz-v1"),"pose-drivers-and-chain-layers\n");
    }
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-thought-filter-v1"),"grayscale-memory-elliptical-thought-v1\n");

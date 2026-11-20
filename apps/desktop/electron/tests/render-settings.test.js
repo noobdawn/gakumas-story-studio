@@ -53,7 +53,8 @@ test('设置页所有控件均能绑定，修改、恢复与撤销快照保留�
  const nodes=new Map(),renderNodes=[],state=project(settings.normalize()).state,history=[];let synced=0;
  Object.assign(state.globalSettings,{duration:30,fps:30,aspect:'16:9'});
  nodes.set('#modal',{dataset:{settingsCurrent:'render'}});
- const container={querySelectorAll:()=>renderNodes,set innerHTML(html){
+ const container={dataset:{},contains:()=>false,querySelectorAll:selector=>selector==='[data-render-key]'?renderNodes:
+   selector==='input[name="physics-method"]'?[...nodes.values()].filter(n=>n.type==='radio'):[],set innerHTML(html){
    this.html=html;renderNodes.length=0;
    for(const match of html.matchAll(/<(input|select|button|output)\b([^>]*)>/g)){
     const attrs=match[2],id=attrs.match(/\bid="([^"]+)"/)?.[1],key=attrs.match(/data-render-key="([^"]+)"/)?.[1];
@@ -61,9 +62,9 @@ test('设置页所有控件均能绑定，修改、恢复与撤销快照保留�
     if(id)nodes.set('#'+id,node);if(key)renderNodes.push(node);
    }
  }};nodes.set('#project-settings-content',container);
- const context=vm.createContext({state,CreatorStory:require('../../ui/story-timeline'),CreatorRenderSettings:settings,$:selector=>nodes.get(selector)||null,globalSettingsSupported:true,renderSettingsSupported:true,performance:true,costumePhysics:true,selectSettingsPage(){},copyState:()=>structuredClone(state),remember:before=>history.push(before),syncPlayer:()=>synced++,notify:message=>{throw Error(message);}});
+ const context=vm.createContext({state,document:{activeElement:null},CreatorStory:require('../../ui/story-timeline'),CreatorRenderSettings:settings,$:selector=>nodes.get(selector)||null,globalSettingsSupported:true,renderSettingsSupported:true,physicsModesSupported:true,physicsAvailable:true,selectSettingsPage(){},copyState:()=>structuredClone(state),remember:before=>history.push(before),syncPlayer:()=>synced++,notify:message=>{throw Error(message);}});
  vm.runInContext(source+';renderGlobalProperties();',context);
- for(const id of ['#outline-enabled','#outline-width','#cloth-enabled','#reset-render-settings'])assert(nodes.get(id)?.onchange||nodes.get(id)?.onclick,id);
+ for(const id of ['#outline-enabled','#outline-width','#physics-hybrid','#physics-none','#physics-gss','#physics-quartz','#reset-render-settings'])assert(nodes.get(id)?.onchange||nodes.get(id)?.onclick,id);
  nodes.get('#global-supersampling').onchange({target:{value:'2'}});
  assert.equal(state.globalSettings.exportSupersampling,2);assert.equal(history.at(-1).globalSettings.exportSupersampling,undefined);
  const aa=renderNodes.find(n=>n.dataset.renderKey==='antialiasing');aa.onchange({target:{value:'6',type:'select-one'}});
@@ -75,7 +76,25 @@ test('设置页所有控件均能绑定，修改、恢复与撤销快照保留�
  assert.equal(state.globalSettings.outlineWidth,.15);assert.equal(state.globalSettings.physicsEnabled,false);
  state.globalSettings=structuredClone(history.at(-1).globalSettings);vm.runInContext('renderGlobalProperties();',context);
  assert.equal(renderNodes.find(n=>n.dataset.renderKey==='reflectionIntensity').value,'1.7');
+ const method=nodes.get('#physics-hybrid');method.checked=true;method.onchange();
+ assert.equal(state.globalSettings.physicsMode,'hybrid');assert.equal(state.globalSettings.physicsEnabled,true);
  context.renderSettingsSupported=false;vm.runInContext('renderGlobalProperties();',context);assert(renderNodes.every(n=>n.disabled));
+});
+
+test('旧布尔开关迁移并允许四种物理方式随工程往返',()=>{
+ assert.equal(settings.physicsMode({physicsEnabled:true}),'quartz');
+ assert.equal(settings.physicsMode({physicsEnabled:false},true),'none');
+ assert.equal(settings.physicsMode(undefined,true),'quartz');
+ for(const mode of ['none','gss','quartz','hybrid']){
+   const doc=project();Object.assign(doc.state.globalSettings,settings.physicsSettings(mode));
+   assert.deepEqual(store.parse(JSON.stringify(doc)),doc);
+   assert.deepEqual(settings.physicsPacket(doc.state.globalSettings,true,true),{physicsMode:mode,physicsEnabled:mode!=='none'});
+ }
+ const invalid=project();invalid.state.globalSettings.physicsMode='gss';
+ assert.throws(()=>store.validate(invalid),/不一致/);
+ invalid.state.globalSettings.physicsMode='other';assert.throws(()=>store.validate(invalid),/物理方式/);
+ assert.throws(()=>settings.physicsPacket(settings.physicsSettings('hybrid'),true,false),/Player/);
+ assert.deepEqual(settings.physicsPacket(settings.physicsSettings('quartz'),true,false),{physicsEnabled:true});
 });
 
 

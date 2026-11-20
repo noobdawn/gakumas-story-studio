@@ -14,6 +14,7 @@ def main():
     if not (a.player/'creator-thought-filter-v1').is_file():raise SystemExit('Player lacks thought vignette filter')
     if not (a.player/'creator-antialiasing-v1').is_file():raise SystemExit('Player lacks MSAA / export supersampling; rebuild Player')
     if not (a.player/'creator-actor-contacts-v2').is_file():raise SystemExit('Player lacks face and garment contacts; rebuild Player')
+    if not (a.player/'creator-physics-modes-v1').is_file():raise SystemExit('Rebuild Player with switchable physics methods')
     if not (a.player/'creator-authored-quartz-v1').is_file():raise SystemExit('Rebuild Player with authored Quartz drivers')
     if not (a.player/'creator-production-gpu-v1').is_file() or not (a.player/'CreatorPlayer_Data/Plugins/x86_64/GSSGpuExport.dll').is_file():raise SystemExit('Player lacks production GPU export; rebuild with -GpuExportPrototype')
     electron=ROOT/'apps/desktop/electron/node_modules/electron/dist'

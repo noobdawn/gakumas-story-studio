@@ -219,6 +219,10 @@ public sealed class SkirtSurfaceCollision : MonoBehaviour
         }
         return false;
     }
+    public void SetGarmentMode(bool authored,bool open)
+    {
+        authoredGarment=authored;openGarment=open;lastRevision=-1;
+    }
     public void SetDisplay(bool active,int revision)
     {
         if(!originalEnabled)return;

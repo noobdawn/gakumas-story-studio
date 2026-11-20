@@ -39,6 +39,5 @@ body.editor-shell{display:flex;flex-direction:column;height:100dvh;min-width:0;o
 .modal.settings-modal{height:min(720px,calc(100dvh - 40px))}
 .settings-content{padding:16px 22px 24px;scrollbar-gutter:stable}
 .settings-content :is(select,.input){height:auto;min-height:calc(1.5em + .7em + 2px)}
-.settings-content .render-category{padding:12px}
 @media(max-width:750px){.settings-sidebar{width:135px}.settings-content{padding:12px}.component-list{grid-template-columns:1fr}.editor-shell>.statusbar>span:last-child{display:none}}
 @media(max-height:650px){.settings-sidebar{padding-top:12px}.settings-sidebar p{margin-bottom:12px}.settings-top{padding-top:8px}.modal>.modal-head{padding-top:8px;padding-bottom:8px}}

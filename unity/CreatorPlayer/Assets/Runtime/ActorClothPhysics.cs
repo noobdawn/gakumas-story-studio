@@ -27,7 +27,8 @@ public sealed class ActorClothPhysics : MonoBehaviour
         public BoneData data, childData; public Transform bone, child;
         public Vector3 localPosition; public Quaternion localRotation;
         public Vector3 position, previous; public bool initialized;
-        public bool hasChain;
+        public bool hasChain, authoredOnly;
+        public float hybridCap;
         public BodyCollider[] obstacles;
         public Anchor anchor;
         public ActorQuartzPose.Limit limit;
@@ -52,7 +53,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
         public Vector3 a, b, side;
         public float ra, rb, width;
         public bool head, torso;
-        public void Update()
+        public void Update(bool useAuthored)
         {
             a = bone.TransformPoint(data.vectorA);
             b = a;
@@ -69,7 +70,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
             float radialScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
             ra = Mathf.Max(0, data.radiusA * radialScale);
             rb = Mathf.Max(0, data.radiusB * radialScale);
-            if (limbParent)
+            if (useAuthored && limbParent)
             {
                 var span = limbParent.position - bone.position;
                 float length = span.magnitude;
@@ -119,12 +120,16 @@ public sealed class ActorClothPhysics : MonoBehaviour
     readonly List<BodyCollider> colliders = new List<BodyCollider>();
     readonly List<Link> links = new List<Link>();
     ActorQuartzPose quartz;
-    public int QuartzDrivers => quartz?.Count ?? 0;
-    public int SkirtDrivers => quartz?.Skirts ?? 0;
-    public int HairDrivers => quartz?.Hair ?? 0;
-    public float SkirtDriverAngle => quartz?.MaxSkirtAngle ?? 0;
-    public float HairDriverAngle => quartz?.MaxHairAngle ?? 0;
-    public int ChainLinks => links.Count;
+    public ActorPhysicsMode Mode { get; private set; } = ActorPhysicsMode.Quartz;
+    bool UseAuthored => Mode == ActorPhysicsMode.Quartz || Mode == ActorPhysicsMode.Hybrid;
+    ActorQuartzPose ActiveQuartz => UseAuthored ? quartz : null;
+    bool isHair, hasPreviousAnchor;
+    public int QuartzDrivers => ActiveQuartz?.Count ?? 0;
+    public int SkirtDrivers => ActiveQuartz?.Skirts ?? 0;
+    public int HairDrivers => ActiveQuartz?.Hair ?? 0;
+    public float SkirtDriverAngle => ActiveQuartz?.MaxSkirtAngle ?? 0;
+    public float HairDriverAngle => ActiveQuartz?.MaxHairAngle ?? 0;
+    public int ChainLinks => UseAuthored ? links.Count : 0;
     public bool OpenGarment { get; private set; }
     bool bindingsDirty;
     float accumulator;
@@ -222,10 +227,11 @@ public sealed class ActorClothPhysics : MonoBehaviour
         foreach(var s in segments)rotations.Add(s.bone,s.localRotation);
     }
 
-    public void Configure(Transform root, Data data, ActorQuartzPose.Profile authored = null)
+    public void Configure(Transform root, Data data, ActorQuartzPose.Profile authored = null, bool legacyGarmentsOnly = false)
     {
         if (!root || data?.dynamic == null || data.@static == null) throw new ArgumentException("Missing actor or swing metadata");
         actorRoot=root;segments.Clear();colliders.Clear();accumulator=0;bindingsDirty=true;
+        isHair=data.source!=null && data.source.EndsWith("_hair",StringComparison.Ordinal);
         var transforms=root.GetComponentsInChildren<Transform>(true);
         if(transforms.GroupBy(t=>t.name).Any(g=>g.Count()>1)) throw new InvalidOperationException("Duplicate actor bone names");
         var byName=transforms.ToDictionary(t=>t.name);
@@ -242,6 +248,9 @@ public sealed class ActorClothPhysics : MonoBehaviour
             if(!child) continue;
             var segment = new Segment {data=spec, childData=specs[child.name], bone=bone,child=child,
                                        localPosition=bone.localPosition,localRotation=bone.localRotation};
+            segment.authoredOnly=legacyGarmentsOnly && !spec.name.Contains("Skirt") && !spec.name.Contains("Jacket");
+            if(isHair && spec.name.Contains("Hair") && !spec.name.Contains("Back"))
+                segment.hybridCap=spec.name.Contains("Front") ? 12f : spec.name.Contains("Side") ? 22f : 0f;
             if(limits!=null)limits.TryGetValue(spec.name, out segment.limit);
             segments.Add(segment);
         }
@@ -298,9 +307,17 @@ public sealed class ActorClothPhysics : MonoBehaviour
         }
         ResetSimulation();
     }
+    public void SetMode(ActorPhysicsMode mode)
+    {
+        if(Mode==mode)return;
+        Mode=mode;
+        ResetSimulation();
+        if(surfaceCollision)surfaceCollision.SetGarmentMode(SkirtDrivers>0 || ChainLinks>0,UseAuthored && OpenGarment);
+    }
     public void ResetSimulation()
     {
-        accumulator=0;
+        accumulator=0;hasPreviousAnchor=false;
+        if(fringeContact)fringeContact.Invalidate();
         foreach(var s in segments){s.bone.localPosition=s.localPosition;s.bone.localRotation=s.localRotation;s.initialized=false;}
         quartz?.Reset();
     }
@@ -319,18 +336,20 @@ public sealed class ActorClothPhysics : MonoBehaviour
     }
     public void MoveHistory(Matrix4x4 fromPrevious)
     {
+        if(fringeContact)fringeContact.Invalidate();
         foreach(var s in segments)Transport(s,fromPrevious);
         foreach(var anchor in anchors)anchor.lastInverse=anchor.bone.worldToLocalMatrix;
     }
     public void MoveHistoryToCurrentAnchors()
     {
-        quartz?.Apply();
+        if(fringeContact)fringeContact.Invalidate();
+        ActiveQuartz?.Apply();
         foreach(var anchor in anchors)anchor.transport=anchor.bone.localToWorldMatrix*anchor.lastInverse;
         foreach(var s in segments)Transport(s,s.anchor.transport);
     }
     void PrepareColliders()
     {
-        foreach (var c in colliders) c.Update();
+        foreach (var c in colliders) c.Update(UseAuthored);
         if (!bindingsDirty) return;
         foreach (var s in segments)
             s.obstacles = colliders.Where(c => (s.childData.collisionMask & c.data.collisionMask) != 0).ToArray();
@@ -343,13 +362,13 @@ public sealed class ActorClothPhysics : MonoBehaviour
     }
     void Solve(float dt, bool advance)
     {
-        foreach(var s in segments){s.bone.localPosition=s.localPosition;s.bone.localRotation=s.localRotation;}
-        quartz?.Apply();
+        foreach(var s in segments)if(UseAuthored || !s.authoredOnly){s.bone.localPosition=s.localPosition;s.bone.localRotation=s.localRotation;}
+        ActiveQuartz?.Apply();
         PrepareColliders();
         foreach(var s in segments)
         {
             var firstStep=!s.initialized;
-            if(!simulateSkirt && s.data.name.Contains("Skirt"))continue;
+            if((s.authoredOnly && !UseAuthored) || (!simulateSkirt && s.data.name.Contains("Skirt")))continue;
             var origin=s.bone.position;var restTip=s.child.position;var restDirection=restTip-origin;var length=restDirection.magnitude;
             s.poseLocal=s.bone.localRotation;
             if(length<.00001f)continue;
@@ -366,7 +385,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
                 var direction=point-origin;if(direction.sqrMagnitude<1e-12f)direction=restDirection;
                 point=origin+direction.normalized*length;
                 foreach(var c in s.obstacles) point=ResolveCollision(point,radius,c);
-                if(separateClothingLayers && !s.hasChain && s.data.name.Contains("Jacket"))point=ResolveLayer(point,s);
+                if(separateClothingLayers && (!UseAuthored || !s.hasChain) && s.data.name.Contains("Jacket"))point=ResolveLayer(point,s);
                 if(experimentalHandCollisions && s.data.name.Contains("Jacket"))
                     foreach(var c in colliders)
                         if(c.bone.name=="LeftHand" || c.bone.name=="RightHand")
@@ -374,7 +393,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
             }
             var directionFinal=point-origin;if(directionFinal.sqrMagnitude<1e-12f)directionFinal=restDirection;
             float angleLimit=skirtMaxAngle>=0f&&s.data.name.Contains("Skirt")?skirtMaxAngle:maxAngle;
-            var desired=s.limit!=null ? directionFinal.normalized*length :
+            var desired=UseAuthored && s.limit!=null ? directionFinal.normalized*length :
                 Vector3.RotateTowards(restDirection,directionFinal.normalized*length,angleLimit*Mathf.Deg2Rad,0);
             if(refineContacts && s.data.name.Contains("Skirt"))desired=RefineDirection(s,origin,restDirection,desired,length,radius,angleLimit);
             // Contact is evaluated after the swing cone. Rotate on the fixed-length sphere
@@ -388,11 +407,44 @@ public sealed class ActorClothPhysics : MonoBehaviour
             var rotation=Quaternion.FromToRotation(restDirection,desired);
             if(firstStep && s.data.name=="RightBackJacket1_S")DebugFirstBackStep=$"origin={origin.ToString("F8")} rest={restTip.ToString("F8")} point={point.ToString("F8")} desired={desired.ToString("F8")} angle={Quaternion.Angle(Quaternion.identity,rotation):F8}";
             s.bone.rotation=rotation*s.bone.rotation;
-            ApplyLimit(s);
+            if(UseAuthored)ApplyLimit(s);
             if(advance){s.previous=old;s.position=s.child.position;}
         }
-        if(links.Count>0)SolveLinks(advance);
+        if(ChainLinks>0)SolveLinks(advance);
+        if(Mode==ActorPhysicsMode.Hybrid && isHair)StabilizeHair(advance);
+        if(advance)hasPreviousAnchor=true;
         foreach(var anchor in anchors)anchor.lastInverse=anchor.bone.worldToLocalMatrix;
+    }
+    void StabilizeHair(bool advance)
+    {
+        foreach(var s in segments)
+        {
+            if(!s.initialized)continue;
+            var before=s.child.position;
+            if(s.hybridCap>0)
+            {
+                var delta=Quaternion.Inverse(s.poseLocal)*s.bone.localRotation;
+                float angle=Quaternion.Angle(Quaternion.identity,delta), knee=s.hybridCap*.7f;
+                if(angle>knee)
+                {
+                    float band=s.hybridCap-knee;
+                    float limited=knee+band*(1-Mathf.Exp(-(angle-knee)/band));
+                    s.bone.localRotation=s.poseLocal*Quaternion.SlerpUnclamped(Quaternion.identity,delta,limited/angle);
+                }
+            }
+            if(!advance)continue;
+            var tip=s.child.position;
+            var velocity=s.position-s.previous;
+            var outward=before-tip;
+            if(outward.sqrMagnitude>1e-12f)
+            {
+                outward.Normalize();
+                var anchorMotion=hasPreviousAnchor ? s.anchor.bone.TransformPoint(s.anchor.lastInverse.MultiplyPoint3x4(s.previous))-s.previous : Vector3.zero;
+                velocity-=outward*Mathf.Max(0,Vector3.Dot(velocity-anchorMotion,outward));
+            }
+            // Also transport descendants of a limited parent. Both Verlet samples must follow the correction.
+            s.position=tip;s.previous=tip-velocity;
+        }
     }
     static void ApplyLimit(Segment s)
     {

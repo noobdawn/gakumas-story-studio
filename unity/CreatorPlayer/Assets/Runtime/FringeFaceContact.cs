@@ -11,12 +11,13 @@ public sealed class FringeFaceContact : MonoBehaviour
     sealed class Joint
     {
         public Transform bone;
-        public Quaternion bind,solved;
+        public Quaternion bind,solved,checkedRotation;
     }
     sealed class Strand
     {
         public readonly List<Joint> joints=new List<Joint>();
-        public float weight,limit;
+        public float weight,limit,checkedWeight;
+        public bool touchesForehead;
         public void SetWeight(float value)
         {
             weight=value;
@@ -28,6 +29,13 @@ public sealed class FringeFaceContact : MonoBehaviour
     {
         public int a,b,c,d;
         public bool Movable => a>=0 || b>=0 || c>=0 || d>=0;
+        public void Mark(Strand[] groups)
+        {
+            if(a>=0)groups[a].touchesForehead=true;
+            if(b>=0)groups[b].touchesForehead=true;
+            if(c>=0)groups[c].touchesForehead=true;
+            if(d>=0)groups[d].touchesForehead=true;
+        }
         public void Limit(Strand[] groups,float fraction)
         {
             if(a>=0)groups[a].limit=Mathf.Min(groups[a].limit,fraction);
@@ -60,7 +68,7 @@ public sealed class FringeFaceContact : MonoBehaviour
         public bool HasSamples=>samples.Count>0;
         public bool Visible=>skin.enabled && !skin.forceRenderingOff && skin.gameObject.activeInHierarchy;
 
-        public HairMesh(SkinnedMeshRenderer skin,Transform face,ForeheadSurface surface,Dictionary<Transform,int> groups)
+        public HairMesh(SkinnedMeshRenderer skin,Transform face,ForeheadSurface surface,Dictionary<Transform,int> groups,Strand[] strands)
         {
             this.skin=skin;this.face=face;this.surface=surface;
             baked.MarkDynamic();skin.BakeMesh(baked);baked.GetVertices(vertices);
@@ -98,6 +106,9 @@ public sealed class FringeFaceContact : MonoBehaviour
                     if(bind.z-z<0)return;
                     s.padding=Mathf.Min(s.padding,Mathf.Max(0,bind.z-z-.0002f));
                 }
+                influence[a].Mark(strands);
+                if(b>=0)influence[b].Mark(strands);
+                if(c>=0)influence[c].Mark(strands);
                 samples.Add(s);used.Add(a);if(b>=0)used.Add(b);if(c>=0)used.Add(c);
             }
             var edges=new HashSet<ulong>();
@@ -153,6 +164,11 @@ public sealed class FringeFaceContact : MonoBehaviour
     ForeheadSurface surface;
     bool diagnostics;
     int rawRevision=-1,faceRevision=-1;
+    int checkedSlot=-1;
+    float checkedTime;
+    Quaternion checkedHead;
+    Vector3 checkedPosition;
+    bool nearContact;
     public Metrics current;
     public bool Configure(MeshFilter face,Material[] materials,bool report)
     {
@@ -175,31 +191,61 @@ public sealed class FringeFaceContact : MonoBehaviour
         foreach(var skin in GetComponentsInChildren<SkinnedMeshRenderer>(true))
         {
             if(!skin.enabled || !skin.sharedMesh)continue;
-            var m=new HairMesh(skin,face.transform,surface,membership);
+            var m=new HairMesh(skin,face.transform,surface,membership,groups);
             if(m.HasSamples)meshes.Add(m);else m.Dispose();
         }
         return meshes.Count>0;
     }
     public void SetFacePose(Vector3[] vertices)=>surface.Update(vertices);
-    public void SetDisplay(bool active,int revision)
+    public void Invalidate(){rawRevision=-1;checkedSlot=-1;current=default;}
+    bool CanReuse(int slot,float clock)
     {
-        if(!active){rawRevision=-1;current=default;return;}
-        if(!meshes.Exists(m=>m.Visible)){current=default;return;}
+        if(slot!=checkedSlot || clock<=checkedTime || faceRevision!=surface.Revision ||
+           Quaternion.Angle(checkedHead,transform.rotation)>=6f || (transform.position-checkedPosition).sqrMagnitude>=.025f*.025f)return false;
+        float tolerance=nearContact?2f:5f;
+        foreach(var strand in groups)if(strand.touchesForehead)
+            foreach(var joint in strand.joints)
+                if(Quaternion.Angle(joint.checkedRotation,joint.bone.localRotation)>tolerance)return false;
+        return true;
+    }
+    public void SetDisplay(bool active,int revision,bool adaptive=false,float clock=0)
+    {
+        if(!active || !meshes.Exists(m=>m.Visible)){Invalidate();return;}
         if(revision>=0 && revision==rawRevision && faceRevision==surface.Revision)return;
+        int slot=(int)Math.Floor((double)clock*15+.0001);
+        bool reuse=adaptive && revision>=0 && rawRevision>=0 && revision!=rawRevision && CanReuse(slot,clock);
         foreach(var group in groups)
         {
             if(revision<0 || rawRevision!=revision)
                 foreach(var joint in group.joints)joint.solved=joint.bone.localRotation;
             else group.SetWeight(1);
-            group.weight=1;
+            if(reuse)group.SetWeight(group.checkedWeight<1f ? .9f*group.checkedWeight : 1f);
+            else
+            {
+                group.weight=1;
+                if(adaptive && group.touchesForehead)foreach(var joint in group.joints)joint.checkedRotation=joint.solved;
+            }
         }
         rawRevision=revision;faceRevision=surface.Revision;current=default;
+        if(!reuse)
+        {
+            CheckContact();
+            if(adaptive)
+            {
+                checkedSlot=slot;checkedTime=clock;checkedHead=transform.rotation;checkedPosition=transform.position;
+                foreach(var group in groups)group.checkedWeight=group.weight;
+            }
+        }
+        else if(diagnostics)foreach(var mesh in meshes)if(mesh.Visible)mesh.Check(groups,true,ref current);
+    }
+    void CheckContact()
+    {
         for(int pass=0;pass<3;pass++)
         {
             foreach(var group in groups)group.limit=1;
             bool hit=false;var measurement=new Metrics();
-            foreach(var mesh in meshes)hit|=mesh.Check(groups,false,ref measurement);
-            if(pass==0)current=measurement;
+            foreach(var mesh in meshes)if(mesh.Visible)hit|=mesh.Check(groups,false,ref measurement);
+            if(pass==0){nearContact=hit;current=measurement;}
             if(!hit)
             {
                 current.after=measurement.before;
@@ -216,7 +262,7 @@ public sealed class FringeFaceContact : MonoBehaviour
             }
             if(!changed)break;
         }
-        if(diagnostics)foreach(var mesh in meshes)mesh.Check(groups,true,ref current);
+        if(diagnostics)foreach(var mesh in meshes)if(mesh.Visible)mesh.Check(groups,true,ref current);
     }
     void OnDestroy(){foreach(var mesh in meshes)mesh.Dispose();}
 }

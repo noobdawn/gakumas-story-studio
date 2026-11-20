@@ -1,9 +1,17 @@
 using System;
 using UnityEngine;
 
+public enum ActorPhysicsMode { None, Gss, Quartz, Hybrid }
+
 // The timeline advances even when a base pose is held or a clip wraps.
 public sealed class ActorPhysicsPlayback
 {
+    public struct BlendPose
+    {
+        public string motion;
+        public float time,weight;
+        public bool Same(BlendPose other)=>motion==other.motion && time==other.time && weight==other.weight;
+    }
     const float Step = 1f / 60f;
     float previousClock = -1, previousBase;
     string previousMotion;
@@ -12,7 +20,23 @@ public sealed class ActorPhysicsPlayback
     Vector3 position, scale;
     Quaternion rotation;
     Matrix4x4 previousWorldToLocal;
+    ActorPhysicsMode previousMode=ActorPhysicsMode.Quartz;
+    BlendPose previousBlend;
     public int Revision { get; private set; }
+
+    public static ActorPhysicsMode ResolveMode(string method,bool legacyEnabled)
+    {
+        switch(method)
+        {
+            case null:
+            case "": return legacyEnabled ? ActorPhysicsMode.Quartz : ActorPhysicsMode.None;
+            case "none": return ActorPhysicsMode.None;
+            case "gss": return ActorPhysicsMode.Gss;
+            case "quartz": return ActorPhysicsMode.Quartz;
+            case "hybrid": return ActorPhysicsMode.Hybrid;
+            default: throw new ArgumentException("Unknown physics method: "+method);
+        }
+    }
 
     static bool SameLayout(CreatorMotionLayer[] a, CreatorMotionLayer[] b)
     {
@@ -34,8 +58,14 @@ public sealed class ActorPhysicsPlayback
 
     public void Apply(bool enabled, float clock, string motion, float localTime, float duration,
                       CreatorMotionLayer[] layers, Transform root, ActorClothPhysics[] solvers,
-                      Action<float, CreatorMotionLayer[]> sample, string placement = null)
+                      Action<float, CreatorMotionLayer[]> sample, string placement = null, ActorPhysicsMode mode = ActorPhysicsMode.Quartz,
+                      BlendPose blend = default, Action<float,float> sampleBlend = null)
     {
+        if(previousMode!=mode)
+        {
+            foreach(var solver in solvers)solver.SetMode(mode);
+            previousMode=mode;previousClock=-1;
+        }
         layers = layers ?? Array.Empty<CreatorMotionLayer>();
         if (!enabled || solvers.Length == 0)
         {
@@ -48,7 +78,7 @@ public sealed class ActorPhysicsPlayback
         bool sameLayout = previousClock >= 0 && SameLayout(previousLayers, layers);
         bool sameMoment = previousClock == clock;
         bool moved = position != root.position || rotation != root.rotation || scale != root.lossyScale;
-        bool samePose = previousMotion == motion && previousBase == localTime && sameLayout && SameValues(previousLayers, layers);
+        bool samePose = previousMotion == motion && previousBase == localTime && sameLayout && SameValues(previousLayers, layers) && previousBlend.Same(blend);
         if (sameMoment && samePose && !moved) { previousPlacement=placement; return; }
 
         float elapsed=clock-previousClock;
@@ -62,7 +92,7 @@ public sealed class ActorPhysicsPlayback
         {
             float delta=localTime-previousBase;
             if(delta<0 && duration>0 && Mathf.Abs(delta+duration)<=elapsed+.001f)delta+=duration;
-            bool poseCut=previousMotion!=motion || Mathf.Abs(delta)>elapsed+Step;
+            bool poseCut=previousMotion!=motion || previousBlend.motion!=blend.motion || Mathf.Abs(delta)>elapsed+Step;
             bool movedPlacement=moved && (sameMoment || placement!=previousPlacement || LargeRootStep(root,elapsed));
             if(poseCut)
             {
@@ -105,11 +135,14 @@ public sealed class ActorPhysicsPlayback
                 }
                 float t = poseCut ? localTime : Mathf.Lerp(previousBase, end, alpha);
                 if (t >= duration && duration > 0) t -= duration;
+                if(sampleBlend!=null && !poseCut)
+                    sampleBlend(Mathf.Lerp(previousBlend.time,blend.time,alpha),Mathf.Lerp(previousBlend.weight,blend.weight,alpha));
                 sample(sampledFinal ? localTime : t, pose);
                 foreach (var solver in solvers) solver.Step(Step);
             }
             if (!sampledFinal)
             {
+                sampleBlend?.Invoke(blend.time,blend.weight);
                 sample(localTime, layers);
                 foreach (var solver in solvers) solver.ApplyCurrentPose();
             }
@@ -117,6 +150,7 @@ public sealed class ActorPhysicsPlayback
         previousClock = clock;
         previousBase = localTime;
         previousMotion = motion;
+        previousBlend = blend;
         previousLayers = layers;
         RememberRoot(root,placement);
         Revision++;

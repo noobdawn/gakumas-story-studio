@@ -117,11 +117,60 @@ html,body{font-size:12px;background:#222428}
 .ui-cover-window{position:absolute;top:1px;height:3px;background:#fff7bc;border-radius:2px;pointer-events:none;opacity:.9}
 .timeline-top{height:auto;min-height:35px;flex-wrap:wrap;gap:5px;padding:4px 10px}.timeline-top .edit-tools,.timeline-top .timeline-controls{flex-wrap:wrap;gap:4px}.timeline-top .tool-icon.active{background:#456f8b;color:#fff}.clip-grouped{border-top:2px solid #e4b66a!important}.clip-group-badge{color:#f3ca80;font-size:11px}.blade-mode .clip,.blade-mode .trim-handle,.blade-mode .fade-handle{cursor:crosshair!important}.blade-mode .fade-handle{pointer-events:none}.blade-guide{position:absolute;top:0;bottom:0;width:1px;background:#ffbd71;pointer-events:none;z-index:20}.blade-guide:before{content:attr(data-time);position:absolute;left:3px;top:0;background:#262d37;color:#ffd29d;font-size:10px;white-space:nowrap}.timeline-marker{position:absolute;top:0;transform:translateX(-50%);background:transparent;border:0;color:#e4b66a;font-size:13px;line-height:16px;cursor:pointer;z-index:6;padding:0 3px}.asset-context-menu{max-height:80vh;overflow:auto}
 
-.settings-content .render-category{border:1px solid #424b54;border-radius:6px;margin:0 0 20px;padding:16px;min-width:0}
-.settings-content .render-category legend{font-size:13px;font-weight:600;color:#dbe3e9;padding:0 8px}
-.settings-content .render-category .dialogue-link{display:flex;width:fit-content}
-.settings-content .render-category .field:last-child,.settings-content .render-category .hint:last-child{margin-bottom:0}
-.settings-content .render-category input:disabled,.settings-content .render-category select:disabled{opacity:.45}
+.project-settings-modal{display:flex;flex-direction:column;--pref-accent:#9fc8e9;--pref-line:#3b444e}
+.project-settings-modal .preferences-titlebar{display:flex;align-items:center;gap:16px;min-height:49px;padding:0 13px 0 20px;background:#292f37;border-bottom:1px solid #15191e}
+.preferences-titlebar h2{display:flex;align-items:center;gap:10px;flex:none;font-size:14px;font-weight:600;color:#eaf0f5;margin:0}
+.preferences-titlebar h2 svg{color:var(--pref-accent)}
+.preferences-titlebar>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#a9b3be}
+.preferences-titlebar .icon-button{margin-left:auto;flex:none;display:grid;place-items:center;width:30px;height:30px}
+.project-settings-modal .settings-shell{flex:1;height:auto}
+.project-settings-modal .settings-sidebar{width:159px;padding:16px 8px;background:#252a31;border-color:#171c22}
+.project-settings-modal .settings-sidebar nav{gap:4px}
+.project-settings-modal .settings-sidebar nav button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border:0;border-radius:5px;font-size:13px}
+.project-settings-modal .settings-sidebar nav button.active{background:#354555;color:#e4f3ff;box-shadow:inset 3px 0 var(--pref-accent)}
+.project-settings-modal .settings-content{container-type:inline-size;padding:20px 26px 24px}
+.render-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.render-head h2{margin:0;color:#edf1f5;font-size:19px;font-weight:600}
+.render-reset{background:transparent;border:1px solid #49545f;border-radius:4px;padding:4px 11px;color:#c8d1db;font-size:12px}
+.render-reset:hover:enabled{background:#343e48}
+.render-tabs{display:flex;align-items:stretch;gap:14px;border-bottom:1px solid var(--pref-line);margin:11px 0 18px}
+.render-tabs>button{background:transparent;color:#a5afba;border:0;border-bottom:2px solid transparent;padding:8px 4px;white-space:nowrap;font-size:13px}
+.render-tabs>button[aria-selected=true]{border-color:var(--pref-accent);color:#d2eaff;font-weight:600}
+.render-tabs>button:hover{color:#fff}
+.render-group,.physics-choice{padding:0;margin:0;border:0;min-width:0}
+.render-group+.render-group{margin-top:18px}
+.render-group>legend,.physics-choice>legend{float:none;margin:0 0 7px;padding:0;font-size:13px;font-weight:600;color:#ced8e1}
+.render-rows{border:1px solid var(--pref-line);border-radius:6px;overflow:hidden;background:#282e35}
+.render-row{display:grid;grid-template-columns:minmax(7em,1fr) minmax(100px,43%);align-items:center;min-height:37px;gap:12px;padding:4px 13px}
+.render-row+.render-row{border-top:1px solid #353d46}
+.render-row>label{font-size:13px;color:#d4dce3}
+.render-control{min-width:0;display:flex;align-items:center;justify-content:flex-end}
+.render-control select,.render-control input.render-number{font-size:12px;min-height:27px;line-height:1.4;padding:3px 7px;background:#20262d;border:1px solid #4a5561;border-radius:4px;color:#e1e8ee}
+.render-control select{width:100%}
+.render-control input.render-number{width:80px;text-align:right;font-variant-numeric:tabular-nums}
+.render-slider{display:flex;align-items:center;width:100%;gap:10px}
+.render-slider input{flex:1;width:0;min-width:0;accent-color:var(--pref-accent)}
+.render-slider output{font-size:12px;font-variant-numeric:tabular-nums;min-width:3em;text-align:right}
+.render-control .render-switch{appearance:none;width:29px;height:16px;margin:0;border:1px solid #637081;border-radius:10px;background:#39424d;position:relative;cursor:pointer}
+.render-switch::after{content:"";position:absolute;left:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#c3ccd5}
+.render-control .render-switch:checked{background:#84afcf;border-color:#98c5e6}
+.render-switch:checked::after{left:15px;background:#172838}
+.render-row:has(:disabled)>label{color:#929da8}
+.render-control :disabled,.render-reset:disabled{opacity:.52}
+.physics-setting{padding:13px}
+.physics-choice{display:flex;flex-wrap:wrap;width:100%}
+.physics-choice>legend{font-weight:400;color:#d4dce3}
+.physics-segments{display:grid;grid-template-columns:repeat(4,1fr);width:100%;gap:2px;border:1px solid #48535f;padding:3px;border-radius:6px;background:#1e242a}
+.physics-option{position:relative;min-width:0;margin:0;cursor:pointer}
+.physics-option input{position:absolute;opacity:0;inset:0;margin:0;width:100%;height:100%;cursor:inherit}
+.physics-option span{display:block;padding:5px 2px;text-align:center;border-radius:3px;color:#adbac5;font-size:13px}
+.physics-option input:checked+span{background:#3d556a;color:#e3f2ff;font-weight:600}
+.physics-option input:hover:enabled+span{color:#fff}
+.physics-option input:focus-visible+span{outline:2px solid #bbdfff;outline-offset:-2px}
+.physics-option input:disabled+span{opacity:.5}
+#physics-help{margin:8px 0 0;color:#a5b1bc;font-size:12px;line-height:1.5}
+@container (max-width:410px){.render-row{padding:5px 9px;grid-template-columns:minmax(5em,1fr) minmax(90px,47%);gap:7px}.render-tabs{gap:5px;flex-wrap:wrap}.render-tabs>button{font-size:12px;padding:7px 3px}.physics-setting{padding:10px}}
+@media(max-width:670px){.project-settings-modal .settings-sidebar{width:108px}.project-settings-modal .settings-sidebar nav button{gap:6px;padding:8px}.project-settings-modal .settings-content{padding:12px}}
 
 .media-anchors{display:grid;grid-template-columns:repeat(3,32px);gap:4px;margin:12px auto;width:max-content}.media-anchors button{padding:5px;background:#303947;color:#bac6d7;border:1px solid #536077;border-radius:4px}.media-anchors button.active{background:#456f8b;color:white}.media-property{display:grid;grid-template-columns:minmax(80px,1fr) 90px 24px;gap:4px;align-items:center;margin:7px 0}.media-property input{width:100%;min-width:0}.media-property label{font-size:12px}.media-group summary{margin:12px 0 6px;font-weight:600;cursor:pointer}.media-group summary button{float:right;font-size:11px}.media-group{border-bottom:1px solid #434b5822;padding-bottom:6px}
 

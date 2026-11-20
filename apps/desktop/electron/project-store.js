@@ -35,7 +35,15 @@ function validate(doc) {
   requireValid(finite(s.current) && s.current>=0 && s.current<=duration && finite(s.fov), '播放时间或 FOV');
   if(s.projectId!==undefined) requireValid(typeof s.projectId==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.projectId), '工程标识');
   if(s.sceneId!==undefined) requireValid(s.sceneId===null||(typeof s.sceneId==='string'&&/^(?:2d-env_2d_|3d-env_3d_)[A-Za-z0-9_-]{1,160}$/.test(s.sceneId))||['trainingroom','classroom','courtyard','dormitory','rooftop'].includes(s.sceneId), '场景素材');
-  if(s.globalSettings!==undefined) { const g=s.globalSettings; requireValid(obj(g)&&typeof g.outlineEnabled==='boolean'&&finite(g.outlineWidth)&&g.outlineWidth>=0&&g.outlineWidth<=0.3&&typeof g.physicsEnabled==='boolean', '全局属性'); }
+  if(s.globalSettings!==undefined) {
+    const g=s.globalSettings;
+    requireValid(obj(g)&&typeof g.outlineEnabled==='boolean'&&finite(g.outlineWidth)&&g.outlineWidth>=0&&g.outlineWidth<=0.3,'全局属性');
+    if(g.physicsMode===undefined)requireValid(typeof g.physicsEnabled==='boolean','全局属性');
+    else {
+      const mode=renderSettings.physicsSettings(g.physicsMode);
+      requireValid(g.physicsEnabled===undefined||mode.physicsEnabled===g.physicsEnabled,'物理方式与开关不一致');
+    }
+  }
   if(s.hiddenAssetIds!==undefined)requireValid(list(s.hiddenAssetIds)&&s.hiddenAssetIds.every(x=>text(x)&&x.length>0)&&new Set(s.hiddenAssetIds).size===s.hiddenAssetIds.length,'已移除素材');
   if(s.hiddenSceneProps!==undefined)requireValid(list(s.hiddenSceneProps)&&s.hiddenSceneProps.every(x=>/^(?:classroom-chair-[0-5]|classroom-prop-\d{1,2}-\d{1,2})$/.test(x))&&new Set(s.hiddenSceneProps).size===s.hiddenSceneProps.length,'已删除道具');
   const objectIds=new Set(), trackIds=new Set(), clipIds=new Set(), assetIds=new Set(), dialogueIds=new Set();
