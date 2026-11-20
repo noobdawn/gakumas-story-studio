@@ -33,7 +33,7 @@
   }
   function attach(track,c){
     const s=env.state(),u=S.unitFor(s,c.dialogue),audio=c.lipSyncSource&&env.getClip(c.lipSyncSource.audioClipId),lipUnit=audio&&S.unitFor(s,audio.clip.dialogue);
-    const box=document.createElement('div');box.className='inspector-section story-inspector';$('#inspector').querySelector('.selection-tag')?.after(box);
+    const box=document.createElement('div');box.className='inspector-section story-inspector';$('#clip-story-properties').append(box);
     if(u||lipUnit){const target=u||lipUnit;box.innerHTML=`<div class="section-title">剧情排时 · 第 ${units().indexOf(target)+1} 段</div><p class="hint">时间由剧情主线计算。修改台词后重新生成语音，会统一调整后续段落。</p><button class="add-component" id="story-edit-current">顺序、停顿与固定时间…</button>`;$('#story-edit-current').onclick=()=>edit(target.id);const d=s.dialogues.find(d=>d.id===target.dialogueId);if(d?.pendingVoice){const button=document.createElement('button');button.id='story-retry-voices';button.className='add-component';button.textContent='应用待处理语音';button.onclick=env.retryPending;box.append(button);}for(const key of ['clip-start','clip-length','dialogue-linked','clip-audio-offset'])if($('#'+key))$('#'+key).disabled=true;return;}
     if(c.dialogue){box.innerHTML='<button class="add-component" id="story-adopt">加入剧情主线</button>';$('#story-adopt').onclick=()=>env.transact(s=>S.insertDialogue(s,c.dialogue,S.insertionIndex(s,c.start),env.id()),'已加入剧情主线');return;}
     if(!units().length){box.innerHTML='<p class="hint">添加剧情段落后，可将此片段绑定到对白或动作段的起止。</p>';return;}

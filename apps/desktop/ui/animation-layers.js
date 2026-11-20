@@ -60,16 +60,18 @@
   return result;
  }
  function sample(keys,time){if(!keys?.length)return 0;if(time<=keys[0].time)return keys[0].value;for(let i=1;i<keys.length;i++)if(time<=keys[i].time){const a=keys[i-1],b=keys[i],u=(time-a.time)/(b.time-a.time);return a.value+(b.value-a.value)*u;}return keys[keys.length-1].value;}
+ function faceWeight(item,face){return item.weight??(!item.lipSyncSource&&face(item.assetId)?100:80);}
  function faceLayers(state,actor,env){
   const values=new Map(),times=new Map(),time=state.current,sampler=env.sample||sample;
   function apply(item,local,factor=1){
    const def=env.face(item.assetId),shape=env.shape(item.assetId);
-   const weight=clamp((item.propertyKeys?.weight?.length?sampler(item.propertyKeys.weight,Math.max(0,local-(item.sourceOffset||0))):item.weight??100)/100)*factor;
+   const amount=clamp((item.propertyKeys?.weight?.length?sampler(item.propertyKeys.weight,Math.max(0,local-(item.sourceOffset||0))):faceWeight(item,env.face))/100);
+   const weight=amount*factor;
    if(def){
     if(!def.channels)throw Error('正在读取表情曲线：'+(def.source||item.assetId));
     const position=item.playback==='loop'||item.loop===true?local%def.length:Math.min(local,def.length);
     for(const channel of def.channels){if(env.supports&&!env.supports(channel.shape))continue;const value=clamp(sampler(channel.keys,Math.max(0,position))/100);values.set(channel.shape,(values.get(channel.shape)||0)*(1-weight)+value*weight);}
-   }else if(shape){if(env.supports&&!env.supports(shape.source))throw Error('角色缺少表情通道：'+shape.source);const value=clamp((item.propertyKeys?.weight?.length?sampler(item.propertyKeys.weight,Math.max(0,local-(item.sourceOffset||0))):item.weight??80)/100);values.set(shape.source,(values.get(shape.source)||0)*(1-factor)+value*factor);if(shape.source.startsWith('eyeMaterial.'))times.set(shape.source,Math.max(0,local));}
+   }else if(shape){if(env.supports&&!env.supports(shape.source))throw Error('角色缺少表情通道：'+shape.source);values.set(shape.source,(values.get(shape.source)||0)*(1-factor)+weight);if(shape.source.startsWith('eyeMaterial.'))times.set(shape.source,Math.max(0,local));}
    else throw Error('常驻表情或贴花素材不可用：'+item.assetId);
   }
   if(actor.inheritBodyFace&&env.bodyFace){const inherited=env.bodyFace();if(inherited)apply(inherited.item,inherited.time);}
@@ -89,5 +91,5 @@
  }
  function matchesFilter(def,filter){if(filter==='all')return true;if(!def)return false;if(filter==='pose')return def.isPose===true;if(filter==='animation')return def.isPose===false;if(filter==='overlay')return def.overlayReady===true;return false;}
  function summary(actor,assetName){return (actor.residentLayers||[]).filter(x=>x.enabled&&x.kind!=='gaze').map(x=>assetName(x.assetId)||'素材缺失').join('、');}
- return {scopes,kinds,validateResident,normalize,motionTime,replaceMotion,bodyLayers,faceLayers,sample,fade,active,matchesFilter,summary};
+ return {scopes,kinds,validateResident,normalize,motionTime,replaceMotion,bodyLayers,faceLayers,faceWeight,sample,fade,active,matchesFilter,summary};
 });

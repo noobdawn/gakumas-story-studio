@@ -101,45 +101,107 @@
   function motionFields(track,clip){
    if(track.type!=='animation')return '';
    const def=e.motion(clip.assetId),asset=e.assets().find(a=>a.id===clip.assetId)||def;
-   return `<div class="clip-motion-source"><div class="section-title">动画素材</div><strong class="clip-motion-name">${esc(e.name(clip.assetId))}</strong><div class="clip-motion-original"><span>原始名称</span><code>${esc(asset?.source||clip.assetId||'未指定素材')}</code></div>${def?`<p class="hint">${motionKind(def)} · 源时长 ${Number(def.length.toFixed(3))} 秒${clip.sourceOffset?' · 从 '+Number(clip.sourceOffset.toFixed(3))+' 秒开始':''}</p>`:'<p class="error">动画素材缺失或不可用，请准备资源或更换动画。</p>'}<button id="clip-motion-replace" class="add-component" ${track.locked?'disabled':''}>更换动画…</button></div>`;
+   return CreatorClipSources.card(esc,{
+    title:'动画素材',name:asset?e.name(clip.assetId):clip.assetId||'未指定动画',
+    source:asset?.source,detail:def?motionKind(def)+' · 源时长 '+Number(def.length.toFixed(3))+' 秒':'',
+    error:def?'':'动画素材缺失或不可用，请准备资源或更换动画。',
+    controls:`<button id="clip-motion-replace" class="add-component" ${track.locked?'disabled':''}>更换动画…</button>`
+   });
   }
   function openMotionPicker(track,clip){
-   if(track.locked){e.notify('轨道已锁定，无法更换动画');return;}
-   const initial=e.state(),original=clip.assetId;
-   let chosen=original,page=1;
-   e.showModal(`<div class="modal-head"><div><h2>更换动画</h2><p>${esc(clip.name)}</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">保留片段名称、起止时间、剧情绑定和播放设置；新动画从头播放。${track.layerRole==='overlay'?'混合方式按新素材调整，保留作用范围和权重。':'原生增量动画需放在叠加轨道。'}</p><div class="field"><label for="motion-picker-search">搜索动画</label><input id="motion-picker-search" class="input" placeholder="按动画名称或原始名称搜索，空格分隔关键词"><label for="motion-picker-kind">素材类型</label><select id="motion-picker-kind">${options({all:'全部',pose:'仅姿势',animation:'仅动画',overlay:'仅可叠加'},'all')}</select></div><div id="motion-picker-list" class="expression-picker-list" aria-label="可选动画"></div><div class="motion-picker-pages"><button id="motion-picker-prev">上一页</button><span id="motion-picker-count" class="hint" aria-live="polite"></span><button id="motion-picker-next">下一页</button></div><p id="motion-picker-choice" class="hint" aria-live="polite"></p><p id="motion-picker-error" class="error" role="alert"></p></div><div class="modal-actions"><button id="motion-picker-cancel" class="top-button">取消</button><button id="motion-picker-apply" class="solid-button" disabled>应用到片段</button></div>`);
-   const list=$('#motion-picker-list'),search=$('#motion-picker-search'),kind=$('#motion-picker-kind');
-   function draw(){
-    const terms=search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
-    const matches=e.assets().filter(a=>{const d=e.motion(a.id);return d&&(track.layerRole==='overlay'||!d.isAdditive)&&L.matchesFilter(d,kind.value)&&terms.every(t=>(e.name(a.id)+' '+a.source).toLocaleLowerCase().includes(t));});
-    matches.sort((a,b)=>Number(b.id===original)-Number(a.id===original));
-    const pages=Math.max(1,Math.ceil(matches.length/60));page=Math.min(page,pages);
-    list.innerHTML=matches.slice((page-1)*60,page*60).map(a=>{const d=e.motion(a.id);return `<button class="costume-picker-row" data-motion-pick="${esc(a.id)}" aria-pressed="${a.id===chosen}"><span>${esc(e.name(a.id))}${a.id===original?'（当前）':''}<small>${esc(a.source)}</small></span><small>${motionKind(d)}<br>${Number(d.length.toFixed(3))} 秒</small></button>`;}).join('')||'<p class="hint">没有匹配的可用动画，请调整搜索条件或检查资源缓存。</p>';
-    $('#motion-picker-count').textContent=`${matches.length} 项 · ${page} / ${pages} 页`;
-    $('#motion-picker-prev').disabled=page<=1;$('#motion-picker-next').disabled=page>=pages;
-    $('#motion-picker-choice').textContent='已选择：'+e.name(chosen);
-    $('#motion-picker-apply').disabled=chosen===original||!e.motion(chosen);
-   }
-   search.oninput=kind.onchange=()=>{page=1;draw();};
-   $('#motion-picker-prev').onclick=()=>{page--;draw();list.scrollTop=0;};
-   $('#motion-picker-next').onclick=()=>{page++;draw();list.scrollTop=0;};
-   list.onclick=event=>{const button=event.target.closest('[data-motion-pick]');if(button){chosen=button.dataset.motionPick;draw();}};
-   $('#motion-picker-cancel').onclick=e.closeModal;
-   $('#motion-picker-apply').onclick=()=>{try{
-    const s=e.state();if(s!==initial||!s.tracks.includes(track)||!track.clips.includes(clip)||clip.assetId!==original)throw Error('工程或片段已改变，请重新选择动画');
-    const before=structuredClone(s);
-    if(!L.replaceMotion(track,clip,chosen,e.motion))return;
-    e.remember(before);e.closeModal();e.render();e.notify('已更换动画，可撤销');
-   }catch(error){$('#motion-picker-error').textContent=error.message;}};
-   draw();search.focus();
+   CreatorClipSources.picker(e,track,clip,{
+    key:'motion',title:'更换动画',hint:'保留片段排时和播放设置，新动画从头播放。',
+    kinds:{all:'全部',pose:'仅姿势',animation:'仅动画',overlay:'仅可叠加'},
+    items:kind=>e.assets().filter(a=>{const d=e.motion(a.id);return d&&(track.layerRole==='overlay'||!d.isAdditive)&&L.matchesFilter(d,kind);}),
+    describe:a=>motionKind(e.motion(a.id))+' · '+Number(e.motion(a.id).length.toFixed(3))+' 秒',
+    apply:a=>L.replaceMotion(track,clip,a.id,e.motion)
+   });
   }
-  function bindMotion(track,clip){const button=$('#clip-motion-replace');if(button)button.onclick=()=>openMotionPicker(track,clip);}
+  function expressionKind(id){
+   if(e.face(id))return 'face';
+   const shape=e.shape(id);
+   if(shape)return shape.source.startsWith('b_')?'shape':'effect';
+  }
+  const expressionKinds={face:'完整表情',shape:'单项形变',effect:'贴花 / 特效'};
+  function expressionFields(track,clip){
+   if(track.type!=='expression'||clip.lipVisemes)return '';
+   const actor=e.state().objects.find(o=>o.id===track.target),def=e.face(clip.assetId),shape=e.shape(clip.assetId);
+   const asset=e.assets().find(a=>a.id===clip.assetId)||def||shape,kind=expressionKind(clip.assetId);
+   const details=[expressionKinds[kind]];
+   if(def){
+    details.push('源时长 '+Number(def.length.toFixed(3))+' 秒');
+    if(def.originalName)details.push('原片 '+def.originalName+'，从 '+Number(def.sourceOffset.toFixed(3))+' 秒分段');
+    if(def.channels&&actor)details.push('角色可用通道 '+def.channels.filter(c=>e.supports(actor,c.shape)).length+' / '+def.channels.length);
+   }
+   const unavailable=!kind||!actor||!e.actorSupported(actor)||shape&&!e.supports(actor,shape.source)||def&&(!e.layered||def.channels&&!def.channels.some(c=>e.supports(actor,c.shape)));
+   return CreatorClipSources.card(esc,{
+    title:clip.lipSyncSource?'口型嘴形':'表情素材',name:asset?e.name(clip.assetId):clip.assetId||'未指定表情',source:asset?.source,
+    detail:details.filter(Boolean).join(' · '),error:unavailable?'此表情素材缺失或当前角色无法使用，可重新选择。':'',
+    controls:`<button id="clip-expression-replace" class="add-component" ${track.locked?'disabled':''}>${clip.lipSyncSource?'更换嘴形':'更换表情'}…</button>`
+   });
+  }
+  function openExpressionReplacement(track,clip){
+   const actor=e.state().objects.find(o=>o.id===track.target);
+   if(!actor||!e.actorSupported(actor))return e.notify('角色不可用');
+   const mouthOnly=Boolean(clip.lipSyncSource);
+   const kinds={...expressionKinds};if(!e.layered)delete kinds.face;
+   CreatorClipSources.picker(e,track,clip,{
+    key:'expression',title:mouthOnly?'更换口型嘴形':'更换表情',hint:'保留片段名称、排时、权重关键帧和渐变，新素材从头取样。',
+    kinds:mouthOnly?null:{all:'全部',...kinds},
+    items:kind=>e.assets().filter(a=>{
+     const type=expressionKind(a.id);
+     if(!type||!kinds[type]||kind&&kind!=='all'&&kind!==type)return false;
+     const shape=e.shape(a.id);
+     if(mouthOnly)return !!shape&&shape.source.startsWith('b_mouth.')&&e.supports(actor,shape.source);
+     if(shape)return e.supports(actor,shape.source);
+     const channels=e.face(a.id).channels;
+     return !channels||channels.some(c=>e.supports(actor,c.shape));
+    }),
+    describe:a=>expressionKinds[expressionKind(a.id)],
+    prepare:async a=>{if(e.face(a.id))await e.prepare(actor,a.id,clip.start);},
+    apply:a=>{
+     if(!e.state().objects.includes(actor)||track.target!==actor.id)throw Error('片段所属角色已改变');
+     const face=e.face(a.id);
+     if(face&&!face.channels?.some(c=>e.supports(actor,c.shape)))throw Error('角色没有可用的表情通道');
+     if((mouthOnly||!e.layered)&&e.state().tracks.some(t=>t.type==='expression'&&t.enabled!==false&&t.target===actor.id&&t.clips.some(c=>c!==clip&&c.assetId===a.id&&c.start<clip.start+clip.len-1e-6&&clip.start<c.start+c.len-1e-6)))throw Error('已有重叠的同名形变片段');
+     if(clip.weight===undefined)clip.weight=L.faceWeight(clip,e.face);
+     clip.assetId=a.id;clip.sourceOffset=0;
+     if(face)clip.playback=clip.loop?'loop':clip.playback||'hold';
+     else delete clip.playback;
+     delete clip.loop;
+     if(mouthOnly)clip.lipEdited=true;
+    }
+   });
+  }
+  function bindSources(track,clip){
+   const motion=$('#clip-motion-replace'),expression=$('#clip-expression-replace');
+   if(motion)motion.onclick=()=>openMotionPicker(track,clip);
+   if(expression)expression.onclick=()=>openExpressionReplacement(track,clip);
+  }
   function clipFields(track,clip){
-   if(track.type==='animation')return (track.layerRole==='overlay'?`<div class="layer-clip-fields"><div class="field"><label>叠加权重（%）</label><input id="layer-weight" class="input" type="number" min="0" max="100" value="${clip.weight??100}"></div>${bodyFields(clip,'layer')}</div>`:`<label class="dialogue-link"><input id="layer-loop" type="checkbox" ${clip.loop?'checked':''}> 在片段范围内循环</label><p class="hint">姿势保持至片段结束；片段空白处使用常驻动画。</p>`);
-   if(track.type==='expression'&&e.face(clip.assetId))return `<div class="field"><label>表情播放方式</label><select id="layer-playback">${options({hold:'播放后保持末帧',loop:'在片段范围内循环'},clip.playback||'hold')}</select></div><p class="hint">整套面部曲线保存在一个片段中；说话口型只临时接管嘴部。</p>`;
+   if(track.type==='animation')return (track.layerRole==='overlay'?`<div class="layer-clip-fields"><div class="field"><label>叠加权重（%）</label><input id="layer-weight" class="input" type="number" min="0" max="100" value="${clip.weight??100}"></div>${bodyFields(clip,'layer')}</div>`:`<label class="dialogue-link"><input id="layer-loop" type="checkbox" ${clip.loop?'checked':''}> 在片段范围内循环</label><div class="field"><label for="layer-end">源动画结束后</label><select id="layer-end" ${clip.loop?'disabled':''}>${options({resident:'恢复常驻动画',hold:'保持末帧'},clip.layerPlayback?'hold':'resident')}</select></div>`);
+   if(track.type==='expression'&&!clip.lipSyncSource&&e.face(clip.assetId))return `<div class="field"><label>表情播放方式</label><select id="layer-playback">${options({hold:'播放后保持末帧',loop:'在片段范围内循环'},clip.loop?'loop':clip.playback||'hold')}</select></div><p class="hint">整套面部曲线保存在一个片段中；说话口型只临时接管嘴部。</p>`;
    return '';
   }
-  function bindClip(track,clip){for(const [key,field] of [['weight','weight'],['blend','blendMode'],['scope','scope'],['loop','loop'],['playback','playback']]){const input=$('#layer-'+key);if(!input)continue;input.disabled=!!track.locked;input.onchange=()=>{try{const value=key==='loop'?input.checked:key==='weight'?Number(input.value):input.value;if(key==='weight'&&(!Number.isFinite(value)||value<0||value>100))throw Error('权重须在 0–100 之间');if(key==='blend'&&value==='additive'&&!e.motion(clip.assetId)?.isAdditive)throw Error('此动作没有原生增量数据');change(()=>clip[field]=value);}catch(err){e.notify(err.message);e.render();}};}}
-  return {residentMarkup,bindResident,motionFields,bindMotion,clipFields,bindClip,addTrack,trackFor,addClip,openExpressionPicker};
+  function bindClip(track,clip){
+   const fields={weight:'weight',blend:'blendMode',scope:'scope',loop:'loop',playback:'playback',end:'layerPlayback'};
+   for(const [key,field] of Object.entries(fields)){
+    const input=$('#layer-'+key);if(!input)continue;
+    input.disabled=!!track.locked||(key==='end'&&clip.loop===true);
+    input.onchange=()=>{
+     if(track.locked||input.disabled)return;
+     let value=input.value;
+     if(key==='loop')value=input.checked;
+     if(key==='end')value=input.value==='hold';
+     if(key==='weight'){
+      value=input.valueAsNumber;
+      if(!Number.isFinite(value)||value<0||value>100){e.notify('权重须在 0–100 之间');e.render();return;}
+     }
+     if(key==='blend'&&value==='additive'&&!e.motion(clip.assetId)?.isAdditive){e.notify('此动作没有原生增量数据');e.render();return;}
+     change(()=>{clip[field]=value;if(key==='playback')delete clip.loop;});
+    };
+   }
+  }
+  return {residentMarkup,bindResident,motionFields,expressionFields,bindSources,clipFields,bindClip,addTrack,trackFor,addClip,openExpressionPicker};
  };
 })(globalThis);
