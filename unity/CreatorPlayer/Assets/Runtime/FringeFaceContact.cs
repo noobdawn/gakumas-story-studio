@@ -12,13 +12,14 @@ public sealed class FringeFaceContact : MonoBehaviour
     sealed class Joint
     {
         public Transform bone;
-        public Quaternion bind,solved,checkedRotation,previousSolved,displayed,spatial;
+        public Quaternion bind,solved,checkedRotation,previousSolved,displayed,spatial,carried;
+        public float reach;
     }
     sealed class Strand
     {
         public readonly List<Joint> joints=new List<Joint>();
-        public float weight,limit,checkedWeight;
-        public bool touchesForehead;
+        public float weight,limit,checkedWeight,conservative,lower,upper;
+        public bool touchesForehead,repair;
         public void SetWeight(float value)
         {
             weight=value;
@@ -55,7 +56,7 @@ public sealed class FringeFaceContact : MonoBehaviour
             return c<0?(v[a]+v[b])*.5f:(v[a]+v[b]+v[c])/3f;
         }
     }
-    enum CheckPhase { Padded, SpatialResult, Guard, HeldGuard, Measure }
+    enum CheckPhase { Raw, Padded, SpatialResult, Refine, Guard, Measure }
     sealed class HairMesh
     {
         readonly SkinnedMeshRenderer skin;
@@ -67,7 +68,7 @@ public sealed class FringeFaceContact : MonoBehaviour
         readonly Influence[] influence;
         readonly Vector3[] points;
         readonly int[] active;
-        readonly float[] spatialDepth;
+        float[] spatialDepth,trialDepth;
         public bool HasSamples=>samples.Count>0;
         public bool Visible=>skin.enabled && !skin.forceRenderingOff && skin.gameObject.activeInHierarchy;
 
@@ -129,6 +130,7 @@ public sealed class FringeFaceContact : MonoBehaviour
             }
             active=new int[used.Count];used.CopyTo(active);
             spatialDepth=new float[samples.Count];
+            trialDepth=new float[samples.Count];
         }
         public void Dispose(){UnityEngine.Object.Destroy(baked);}
         public bool Check(Strand[] groups,CheckPhase phase,ref Metrics metrics)
@@ -137,42 +139,62 @@ public sealed class FringeFaceContact : MonoBehaviour
             var toFace=face.worldToLocalMatrix*skin.transform.localToWorldMatrix;
             foreach(int i in active)points[i]=toFace.MultiplyPoint3x4(vertices[i]);
             bool hit=false;
-            bool spatial=phase==CheckPhase.Padded || phase==CheckPhase.SpatialResult;
+            bool padded=phase==CheckPhase.Raw || phase==CheckPhase.Padded;
+            bool spatial=padded || phase==CheckPhase.SpatialResult;
+            bool trial=phase==CheckPhase.Raw || phase==CheckPhase.Refine || phase==CheckPhase.Guard;
             for(int i=0;i<samples.Count;i++)
             {
                 var s=samples[i];
                 var p=s.Position(points);
-                if(spatial)spatialDepth[i]=0;
+                if(spatial)spatialDepth[i]=float.NegativeInfinity;
+                if(trial)trialDepth[i]=float.NegativeInfinity;
                 if(!surface.TryDepth(p,out var z,p.z-s.padding))continue;
                 float depth=z-p.z;
-                if(spatial)spatialDepth[i]=Mathf.Max(0,depth);
+                if(spatial)spatialDepth[i]=depth;
+                if(trial)trialDepth[i]=depth;
                 if(depth>.00005f)
                 {
-                    if(phase==CheckPhase.Padded){metrics.before++;metrics.beforeDepth=Mathf.Max(metrics.beforeDepth,depth);}
+                    if(padded){metrics.before++;metrics.beforeDepth=Mathf.Max(metrics.beforeDepth,depth);}
                     else {metrics.after++;metrics.afterDepth=Mathf.Max(metrics.afterDepth,depth);}
                 }
                 float deficit=depth+s.padding;
-                if(phase==CheckPhase.Padded){if(deficit<=.0001f)continue;}
+                if(padded){if(deficit<=.0001f)continue;}
                 else
                 {
-                    if(phase!=CheckPhase.Guard && phase!=CheckPhase.HeldGuard)continue;
-                    // The spatial solve uses 0.1 mm contact slop. Allow the same
-                    // tolerance on the previous display before abandoning its pose.
-                    float slop=phase==CheckPhase.HeldGuard?.0001f:.00005f;
-                    if(depth<=Mathf.Max(slop,spatialDepth[i]+.000002f))continue;
+                    if(phase!=CheckPhase.Refine && phase!=CheckPhase.Guard)continue;
+                    float clearance=phase==CheckPhase.Refine ? .25f*s.padding : 0;
+                    if(depth+clearance<=Mathf.Max(.00005f,spatialDepth[i]+.000002f))continue;
                 }
                 hit=true;
                 // Estimate the safe fraction along the return to the authored strand.
                 // The next pass reskins the actual curved, multi-joint motion.
                 float travel=s.bindZ-p.z;
-                float fraction=phase==CheckPhase.Padded && travel>deficit?Mathf.Clamp(1-(deficit+.00035f)/travel,0,.82f):0;
+                float fraction=padded && travel>deficit?Mathf.Clamp(1-(deficit+.00035f)/travel,0,.82f):0;
                 influence[s.a].Limit(groups,fraction);
                 if(s.b>=0)influence[s.b].Limit(groups,fraction);
                 if(s.c>=0)influence[s.c].Limit(groups,fraction);
             }
-            if(phase==CheckPhase.Padded)metrics.samples+=samples.Count;
+            if(padded)metrics.samples+=samples.Count;
             return hit;
         }
+        public void RelaxBounds(Strand[] groups)
+        {
+            for(int i=0;i<samples.Count;i++)
+            {
+                var s=samples[i];
+                float target=.000035f-s.padding*.25f, raw=trialDepth[i];
+                if(raw<=target)continue;
+                // Use the skin clearance at both ends of the actual correction.
+                // Points outside the depth query were already clear of the padding.
+                float safe=float.IsNegativeInfinity(spatialDepth[i])?-s.padding:spatialDepth[i];
+                if(raw<=safe+.000002f)continue;
+                float fraction=Mathf.Clamp01((target-safe)/(raw-safe));
+                influence[s.a].Limit(groups,fraction);
+                if(s.b>=0)influence[s.b].Limit(groups,fraction);
+                if(s.c>=0)influence[s.c].Limit(groups,fraction);
+            }
+        }
+        public void AcceptDepths(){var old=spatialDepth;spatialDepth=trialDepth;trialDepth=old;}
     }
 
     readonly List<HairMesh> meshes=new List<HairMesh>();
@@ -186,6 +208,16 @@ public sealed class FringeFaceContact : MonoBehaviour
     Vector3 checkedPosition;
     bool nearContact,settling;
     public Metrics current;
+    static float Reach(Transform bone,Transform head)
+    {
+        float length=0;
+        foreach(Transform child in bone)
+        {
+            var offset=head.InverseTransformVector(child.position-bone.position);
+            length=Mathf.Max(length,offset.magnitude+Reach(child,head));
+        }
+        return length;
+    }
     public bool Configure(MeshFilter face,Material[] materials,bool report)
     {
         surface=new ForeheadSurface(face.sharedMesh,materials);diagnostics=report;
@@ -200,7 +232,7 @@ public sealed class FringeFaceContact : MonoBehaviour
             var root=pair.Key;
             for(var p=root.parent;p && p!=transform;p=p.parent)if(bind.ContainsKey(p))root=p;
             if(!roots.TryGetValue(root,out int id)){id=strands.Count;roots.Add(root,id);strands.Add(new Strand());}
-            strands[id].joints.Add(new Joint{bone=pair.Key,bind=pair.Value});
+            strands[id].joints.Add(new Joint{bone=pair.Key,bind=pair.Value,reach=Reach(pair.Key,face.transform)});
             membership.Add(pair.Key,id);
         }
         groups=strands.ToArray();
@@ -252,7 +284,8 @@ public sealed class FringeFaceContact : MonoBehaviour
         rawRevision=revision;faceRevision=surface.Revision;current=default;
         if(!reuse)
         {
-            CheckContact();
+            CheckContact(revision>=0);
+            if(revision>=0 && nearContact)RefineContact();
             settling=continuous && ApplyTemporalContact((float)(clock-displayTime));
             checkedSlot=slot;checkedTime=clock;checkedHead=transform.rotation;checkedPosition=transform.position;
             foreach(var group in groups)group.checkedWeight=group.weight;
@@ -265,13 +298,14 @@ public sealed class FringeFaceContact : MonoBehaviour
             joint.previousSolved=joint.solved;
         }
     }
-    void CheckContact()
+    void CheckContact(bool trackDepth)
     {
         for(int pass=0;pass<3;pass++)
         {
             foreach(var group in groups)group.limit=1;
             bool hit=false;var measurement=new Metrics();
-            foreach(var mesh in meshes)if(mesh.Visible)hit|=mesh.Check(groups,CheckPhase.Padded,ref measurement);
+            var phase=trackDepth && pass==0?CheckPhase.Raw:CheckPhase.Padded;
+            foreach(var mesh in meshes)if(mesh.Visible)hit|=mesh.Check(groups,phase,ref measurement);
             if(pass==0){nearContact=hit;current=measurement;}
             if(!hit)
             {
@@ -291,57 +325,94 @@ public sealed class FringeFaceContact : MonoBehaviour
         }
         foreach(var mesh in meshes)if(mesh.Visible)mesh.Check(groups,CheckPhase.SpatialResult,ref current);
     }
+    void RefineContact()
+    {
+        // The conservative pass can take a whole strand to bind when one
+        // triangle just enters its padding. Use the measured clearances to
+        // restore free swing, then test the actual weighted mesh.
+        foreach(var group in groups){group.lower=group.conservative=group.weight;group.upper=group.touchesForehead?1:group.weight;group.limit=1;}
+        foreach(var mesh in meshes)if(mesh.Visible)mesh.RelaxBounds(groups);
+        foreach(var group in groups)if(group.touchesForehead && group.weight<1)
+            group.SetWeight(Mathf.Lerp(group.conservative,1,group.limit));
+        for(int pass=0;pass<4;pass++)
+        {
+            if(AcceptPose(CheckPhase.Refine,true))return;
+            foreach(var group in groups)
+            {
+                if(group.limit<1)group.upper=group.weight;else group.lower=group.weight;
+                if(group.lower<group.upper)group.SetWeight(pass==3?group.lower:(group.lower+group.upper)*.5f);
+            }
+        }
+        if(!AcceptPose(CheckPhase.Guard,true))
+            foreach(var group in groups)if(group.weight!=group.conservative)group.SetWeight(group.conservative);
+    }
     bool ApplyTemporalContact(float elapsed)
     {
         bool changed=false;
         foreach(var group in groups)if(group.touchesForehead)
         {
-            float speed=group.weight<group.checkedWeight?75f:45f;
+            // Only the change in contact correction uses this distance budget.
+            // Adjacent joints share it; their rotations all affect the same tips.
+            float travel=0;
             foreach(var joint in group.joints)
             {
                 joint.spatial=joint.bone.localRotation;
-                float rawStep=Quaternion.Angle(joint.previousSolved,joint.solved);
-                float budget=speed*elapsed+rawStep;
-                if(Quaternion.Angle(joint.displayed,joint.spatial)<=budget)continue;
-                joint.bone.localRotation=Quaternion.RotateTowards(joint.displayed,joint.spatial,budget);
-                changed=true;
+                joint.carried=joint.displayed*Quaternion.Inverse(joint.previousSolved)*joint.solved;
+                travel+=joint.reach*Mathf.Deg2Rad*Quaternion.Angle(joint.carried,joint.spatial);
             }
+            if(travel<=.00012f)continue;
+            float fraction=Mathf.Min(1-Mathf.Exp(-12*elapsed),surface.margin*16*elapsed/travel);
+            foreach(var joint in group.joints)joint.bone.localRotation=Quaternion.Slerp(joint.carried,joint.spatial,fraction);
+            changed=true;
         }
         if(!changed)return false;
         // Padding gives a strand space to approach contact gradually. A displayed
         // sample crossing the skin must return toward the tested spatial solution.
         // Some authored samples already intersect at bind, so compare each point
         // against the depth achieved at that same point on this frame.
-        var spatial=current;
-        for(int pass=0;pass<6;pass++)
+        if(AcceptPose())return true;
+        foreach(var group in groups)if(group.limit<1)
+            foreach(var joint in group.joints)joint.bone.localRotation=joint.displayed;
+        if(AcceptPose())return true;
+        // Shared vertices can make the previous pose unsafe for a second strand.
+        // Start from the complete previous display and find the smallest safe
+        // fraction of the spatial repair, keeping unrelated strands in place.
+        foreach(var group in groups)if(group.touchesForehead)
+            foreach(var joint in group.joints)joint.bone.localRotation=joint.displayed;
+        if(AcceptPose())return true;
+        foreach(var group in groups)group.repair=group.limit<1;
+        for(int pass=0;pass<2;pass++)
         {
-            current.after=0;current.afterDepth=0;
-            foreach(var group in groups)group.limit=1;
-            bool hit=false;
-            var phase=pass==2 || pass==3?CheckPhase.HeldGuard:CheckPhase.Guard;
-            foreach(var mesh in meshes)if(mesh.Visible)hit|=mesh.Check(groups,phase,ref current);
-            if(!hit)return true;
-            if(pass==2)
-            {
-                // Vertices can be shared across strands. Restore the entire previous
-                // fringe once before escalating a contact on a mixed set of rotations.
-                foreach(var group in groups)if(group.touchesForehead)
-                    foreach(var joint in group.joints)joint.bone.localRotation=joint.displayed;
-                continue;
-            }
-            foreach(var group in groups)if(group.limit<1)foreach(var joint in group.joints)
-            {
-                // A weight on a moving raw pose does not reproduce the previous
-                // display. Test its actual local rotations in today's face pose.
-                if(pass==0)joint.bone.localRotation=Quaternion.Slerp(joint.displayed,joint.bone.localRotation,.5f);
-                else if(pass==1)joint.bone.localRotation=joint.displayed;
-                else if(pass==3)joint.bone.localRotation=Quaternion.RotateTowards(joint.displayed,joint.spatial,150f*elapsed);
-                else joint.bone.localRotation=joint.spatial;
-            }
+            SetRepair(1);
+            if(AcceptPose())break;
+            foreach(var group in groups)if(group.touchesForehead && (pass==1 || group.limit<1))group.repair=true;
         }
-        foreach(var group in groups)if(group.touchesForehead)foreach(var joint in group.joints)joint.bone.localRotation=joint.spatial;
-        current=spatial;
-        return false;
+        float low=0,high=1;
+        for(int pass=0;pass<5;pass++)
+        {
+            float trial=(low+high)*.5f;
+            SetRepair(trial);
+            if(AcceptPose())high=trial;else low=trial;
+        }
+        SetRepair(high);
+        return true;
+    }
+    void SetRepair(float fraction)
+    {
+        foreach(var group in groups)if(group.repair)
+            foreach(var joint in group.joints)joint.bone.localRotation=Quaternion.Slerp(joint.displayed,joint.spatial,fraction);
+    }
+    bool AcceptPose(CheckPhase phase=CheckPhase.Guard,bool keepDepths=false)
+    {
+        foreach(var group in groups)group.limit=1;
+        var counts=new Metrics();
+        bool hit=false;
+        foreach(var mesh in meshes)if(mesh.Visible)hit|=mesh.Check(groups,phase,ref counts);
+        if(hit)return false;
+        // Keep the measured reference for temporal guards without reskinning.
+        if(keepDepths)foreach(var mesh in meshes)if(mesh.Visible)mesh.AcceptDepths();
+        current.after=counts.after;current.afterDepth=counts.afterDepth;
+        return true;
     }
     void OnDestroy(){foreach(var mesh in meshes)mesh.Dispose();}
 }

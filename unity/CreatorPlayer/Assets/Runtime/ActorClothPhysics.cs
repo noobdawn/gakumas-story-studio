@@ -352,9 +352,9 @@ public sealed class ActorClothPhysics : MonoBehaviour
         var inverse=map.inverse;
         foreach(var anchor in anchors)anchor.lastInverse=anchor.lastInverse*inverse;
     }
-    public void MoveHistoryToCurrentAnchors()
+    public void MoveHistoryToCurrentAnchors(bool continuousFade=false)
     {
-        if(fringeContact)fringeContact.Invalidate();
+        if(fringeContact && !continuousFade)fringeContact.Invalidate();
         ActiveQuartz?.Apply();
         foreach(var anchor in anchors)anchor.transport=anchor.bone.localToWorldMatrix*anchor.lastInverse;
         foreach(var s in segments)Transport(s,s.anchor.transport);

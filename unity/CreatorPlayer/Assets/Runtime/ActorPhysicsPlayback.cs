@@ -11,6 +11,8 @@ public sealed class ActorPhysicsPlayback
         public string motion;
         public float time,weight;
         public bool Same(BlendPose other)=>motion==other.motion && time==other.time && weight==other.weight;
+        internal (string clip,float sampleTime) Dominant(string baseClip,float baseTime) =>
+            !string.IsNullOrEmpty(motion) && weight>.5f ? (motion,time) : (baseClip,baseTime);
     }
     const float Step = 1f / 60f;
     public readonly struct Clock
@@ -110,7 +112,13 @@ public sealed class ActorPhysicsPlayback
             if(poseCut)
             {
                 sample(localTime,layers);
-                foreach(var solver in solvers)solver.MoveHistoryToCurrentAnchors();
+                // A direct clip can become the outgoing mixer input while still
+                // supplying nearly the same head pose. Keep its contact history.
+                var outgoing=previousBlend.Dominant(previousMotion,previousBase);
+                var incoming=blend.Dominant(motion,localTime);
+                bool continuousFade=mode==ActorPhysicsMode.Hybrid && previousBlend.motion!=blend.motion &&
+                    outgoing.clip==incoming.clip && Mathf.Abs(incoming.sampleTime-outgoing.sampleTime)<=elapsed+Step;
+                foreach(var solver in solvers)solver.MoveHistoryToCurrentAnchors(continuousFade);
             }
             else if(movedPlacement)
             {
