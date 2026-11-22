@@ -110,6 +110,8 @@ function validate(doc) {
       if(c.lipGeneration!==undefined)requireValid(text(c.lipGeneration)&&c.lipGeneration.length>0,'口型生成标识');
       if(c.lipMode!==undefined)requireValid(obj(c.lipSyncSource)&&['amplitude','phoneme','manual'].includes(c.lipMode)&&((c.lipMode==='amplitude')===(c.lipVisemes===undefined)),'口型模式');
       if(c.dialogue!==undefined) requireValid(text(c.dialogue)&&dialogueIds.has(c.dialogue), '对话引用');
+      if(c.muted!==undefined)requireValid(t.type==='audio'&&typeof c.muted==='boolean','静音开关');
+      if(c.rateSourceLength!==undefined)requireValid(['media','audio'].includes(t.type)&&finite(c.rateSourceLength)&&c.rateSourceLength>0&&c.rateSourceLength<=14400,'变速源区间');
       screenMedia.validateClip(c);if(t.type==='media')screenMedia.layout(s.objects.find(o=>o.id===t.target),c,0);
       if(c.propertyKeys!==undefined) {
         requireValid(obj(c.propertyKeys), '关键帧');

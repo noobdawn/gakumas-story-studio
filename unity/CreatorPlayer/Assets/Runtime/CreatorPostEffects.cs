@@ -37,10 +37,23 @@ public sealed class CreatorPostEffects:IDisposable {
  public void Composite(RenderTexture output,Texture source){if(source)Graphics.Blit(source,output,material,1);}
  public Texture TransformLayer(Texture source,CreatorCompositionLayout p,int w,int h){
   if(p==null)return source;CreatorCompositionLayout.Validate(p);
-  if(p.x==0&&p.y==0&&p.scale==1&&p.width==1&&p.height==1&&p.opacity==1)return source;
+  if(p.x==0&&p.y==0&&p.scale==1&&p.width==1&&p.height==1&&p.opacity==1&&p.rotation==0&&!p.flipX&&!p.flipY&&p.cropLeft+p.cropRight+p.cropTop+p.cropBottom==0)return source;
   SetLayout(p);var result=Make(w,h);Graphics.Blit(source,result,material,8);return result;
  }
- void SetLayout(CreatorCompositionLayout p){p=p??new CreatorCompositionLayout();material.SetVector("_Layout",new Vector4(p.x,p.y,p.scale*p.width,p.scale*p.height));material.SetFloat("_LayoutOpacity",p.opacity);}
+ void SetLayout(CreatorCompositionLayout p){p=p??new CreatorCompositionLayout();material.SetVector("_Layout",new Vector4(p.x,p.y,p.scale*p.width*(p.flipX?-1:1),p.scale*p.height*(p.flipY?-1:1)));float a=p.rotation*Mathf.Deg2Rad;material.SetVector("_ClipGeometry",new Vector4(Mathf.Cos(a),Mathf.Sin(a),p.originX,p.originY));material.SetVector("_ClipCrop",new Vector4(p.cropLeft,p.cropRight,p.cropBottom,p.cropTop));material.SetFloat("_LayoutOpacity",p.opacity);}
+ public Texture Mask(Texture source,CreatorClipMask[] masks,float[] quad,int w,int h) {
+  if(masks==null)return source;
+  var basis=quad==null?new Vector4(1,0,0,1):new Vector4(quad[2]-quad[0],quad[3]-quad[1],quad[6]-quad[0],quad[7]-quad[1]);
+  material.SetVector("_MaskOrigin",quad==null?Vector4.zero:new Vector4(quad[0],quad[1],0,0));
+  material.SetVector("_MaskBasis",basis);
+  foreach(var m in masks){
+   if(!m.enabled)continue;
+   material.SetVector("_MaskCenterSize",new Vector4(.5f+m.x,.5f+m.y,m.width,m.height));
+   material.SetVector("_MaskSettings",new Vector4(m.shape=="linear"?0:m.shape=="mirror"?1:m.shape=="circle"?2:3,m.rotation*Mathf.Deg2Rad,m.feather,m.radius));
+   var next=Make(w,h);Graphics.Blit(source,next,material,9);source=next;
+  }
+  return source;
+ }
  public Texture Transition(Texture left,Texture right,string kind,float progress,int w,int h){var result=Make(w,h);material.SetTexture("_Right",right);material.SetFloat("_Progress",progress);material.SetFloat("_TransitionKind",kind=="black"?1:kind=="wipe"?2:0);Graphics.Blit(left,result,material,4);return result;}
  public Texture Apply(Texture clean,string target,int w,int h)=>ApplyLayers(clean,Layers(target),w,h,state?.serial==true);
  public Texture ApplyLayers(Texture clean,CreatorEffectLayer[] layers,int w,int h,bool serial=true){

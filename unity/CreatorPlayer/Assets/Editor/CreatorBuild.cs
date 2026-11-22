@@ -55,6 +55,7 @@ public static class CreatorBuild {
    var result=BuildPipeline.BuildPlayer(new[]{folder+"/CreatorRenderScene.unity"},Path.Combine(output,"CreatorPlayer.exe"),BuildTarget.StandaloneWindows64,BuildOptions.None);
    File.WriteAllText(Path.Combine(output,"build-report.txt"),"result="+result.summary.result+"\nerrors="+result.summary.totalErrors+"\ngraphicsApi="+string.Join(",",PlayerSettings.GetGraphicsAPIs(BuildTarget.StandaloneWindows64))+"\nautoGraphicsApi="+PlayerSettings.GetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64)+"\ncolorspace="+PlayerSettings.colorSpace+"\nbuild=release\nmsaa=1\nantialiasing=SMAA High\n");
    exitCode=result.summary.result==UnityEditor.Build.Reporting.BuildResult.Succeeded&&result.summary.totalErrors==0?0:1;
+   if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-shot-cache-v1"),"linear-half-preview\n");
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-antialiasing-v1"),"msaa-2-4-8-combined-smaa-export-world-ssaa-2-v1\n");
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-export-profile-v1"),"cpu-wall-spans-v1\n");
    if(exitCode==0)File.WriteAllText(Path.Combine(output,"creator-merged-export-v1"),"gpu-state-frame-v1\n");

@@ -149,7 +149,7 @@
   function copy(s,ids){
     const selected=new Set(ids),all=rows(s),audios=new Map(all.filter(r=>r.track.type==='audio').map(r=>[r.clip.id,r.clip]));
     const ds=new Set(all.filter(r=>selected.has(r.clip.id)).map(r=>r.clip.dialogue||audios.get(r.clip.lipSyncSource?.audioClipId)?.dialogue));
-    const us=units(s).filter(u=>ds.has(u.dialogueId));if(!us.length)return null;const ownedIds=owned(s,us.map(u=>u.id));
+    const us=units(s).filter(u=>u.dialogueId&&ds.has(u.dialogueId));if(!us.length)return null;const ownedIds=owned(s,us.map(u=>u.id));
     if(ids.some(id=>!ownedIds.has(id)))fail('请分别复制剧情段落与固定片段；剧情复制会包含其专属动作');
     const items=all.filter(r=>ownedIds.has(r.clip.id)),fresh=[];
     for(const r of items)if(r.clip.lipSyncSource){const a=all.find(a=>a.clip.id===r.clip.lipSyncSource.audioClipId),d=s.dialogues.find(d=>d.id===a?.clip.dialogue);if(a&&d&&r.clip.lipSyncSource.signature===signature(s,a.track,a.clip,d))fresh.push(d.id);}

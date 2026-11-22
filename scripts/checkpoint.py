@@ -12,6 +12,7 @@ def git(*args):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--message',required=True)
+    parser.add_argument('--staged',action='store_true',help='Checkpoint only explicitly staged task files')
     args=parser.parse_args()
     if git('rev-parse','--show-toplevel').replace('\\','/').lower()!=ROOT.as_posix().lower():
         raise SystemExit('Run inside the dedicated source repository')
@@ -23,7 +24,8 @@ def main():
             raise SystemExit('Generated/user data must not enter source history: '+name)
         if (ROOT/p).is_file() and (ROOT/p).stat().st_size>10*1024**2:
             raise SystemExit('Review large file before checkpoint: '+name)
-    git('add','--all')
+    if not args.staged:
+        git('add','--all')
     if git('diff','--cached','--name-only'):
         git('commit','--quiet','-m',args.message)
     revision=git('rev-parse','HEAD')

@@ -132,6 +132,21 @@
     data.trackOrder=s.tracks.map(t=>t.id);
     return structuredClone(data);
   }
+  function pasteTime(s,data,time,env){
+    if(!data || data.storyUnits)return time;
+    // Move the entire selection by the same number of frames to the first free span.
+    const tracks=new Map(s.tracks.map(t=>[t.id,t]));
+    const ranges=[];
+    for(const {trackId,clip} of data.items){
+      const offset=clip.start-data.start;
+      for(const other of tracks.get(trackId)?.clips||[])ranges.push([other.start-offset-clip.len,other.start+other.len-offset]);
+    }
+    let at=env.q(time);
+    for(const [left,right] of ranges.sort((a,b)=>a[0]-b[0])){
+      if(at>left+1e-6&&at<right-1e-6)at=Math.ceil((right-1e-7)/env.frame)*env.frame;
+    }
+    return env.q(at);
+  }
   function paste(s,clipboard,at,env){
     if(!clipboard)throw Error('请先复制片段');
     if(clipboard.projectId!==s.projectId)throw Error('请在当前工程重新复制片段');
@@ -180,5 +195,5 @@
     s.dialogues.push(...s.dialogues.filter(d=>dialogues.has(d.id)).map(d=>({...structuredClone(d),id:dialogues.get(d.id)})));
     for(const p of prepared){Object.assign(p.row.clip,p.left);p.row.track.clips.push(p.right);p.row.track.clips.sort((a,b)=>a.start-b.start);}refreshLips(s,rows(s).filter(r=>affected.some(a=>a.clip.id===r.clip.id)||[...idsMap.values()].includes(r.clip.id)),env,new Set([...valid,...[...valid].map(x=>idsMap.get(x))]));return prepared.flatMap(p=>[p.left.id,p.right.id]);
   }
-  return {rows,select,expand,prune,validate,group,ungroup,move,transfer,copy,paste,remove,cut,slice};
+  return {rows,select,expand,prune,validate,group,ungroup,move,transfer,copy,paste,pasteTime,remove,cut,slice};
 });

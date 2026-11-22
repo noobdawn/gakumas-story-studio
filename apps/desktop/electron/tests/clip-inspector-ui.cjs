@@ -205,7 +205,8 @@ module.exports=async function(win,ui,temp) {
   assert.equal(picture.assetId,'movie');assert.equal(picture.name,'自定义 picture-clip');
   assert.deepEqual(picture.mediaKeys,clip(fixture,'picture-clip').mediaKeys);assert.equal(soundtrack.assetId,'movie');
   await set('[data-media-rate]',1.25);await load(await snapshot(),soundtrack.id);
-  assert.equal(await js("q('#clip-audio-rate').disabled && q('#clip-audio-offset').disabled"),true);
+  assert.equal(await js("!q('#clip-audio-rate').disabled && q('#clip-audio-offset').disabled"),true);
+  assert.equal(clip((await snapshot()),soundtrack.id).len,2.4);
   await click('[data-inspect-related="picture-clip"]');assert.equal(await js("q('[data-media-rate]').value"),'1.25');
   await check('camera',['[data-camera-field="fov"]','#visibility-key']);await click('#visibility-key');await set('#object-visible',false);
   assert.equal(clip(await snapshot(),'camera').propertyKeys.visible[0].value,false);

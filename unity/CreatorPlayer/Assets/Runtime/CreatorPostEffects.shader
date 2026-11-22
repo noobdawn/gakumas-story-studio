@@ -7,8 +7,30 @@ Shader "Hidden/Creator/StoryEffects" {
  float4 _MainTex_TexelSize,_Params,_TextureParams;
  float _Strength,_Weight,_Seed,_StoryTime,_Progress,_TransitionKind;
  float4 _EffectParams,_EffectParams2,_Layout;float _LayoutOpacity;
- float2 layoutUV(float2 uv){return (uv-.5-_Layout.xy)/max(_Layout.zw,.000001)+.5;}
- float layoutMask(float2 uv){float2 p=layoutUV(uv);return step(0,p.x)*step(p.x,1)*step(0,p.y)*step(p.y,1)*_LayoutOpacity;}
+ float4 _ClipCrop,_ClipGeometry,_MaskBasis,_MaskCenterSize,_MaskSettings;
+ float2 _MaskOrigin;
+ float2 layoutUV(float2 uv){
+   float2 pivot=.5+_ClipGeometry.zw,p=uv-pivot-_Layout.xy;
+   float aspect=_MainTex_TexelSize.z/_MainTex_TexelSize.w;
+   p.x*=aspect;float2 q=float2(_ClipGeometry.x*p.x+_ClipGeometry.y*p.y,-_ClipGeometry.y*p.x+_ClipGeometry.x*p.y);
+   return float2(q.x/aspect,q.y)/_Layout.zw+pivot;
+ }
+ float4 geometricMask(v2f_img i):SV_Target {
+   float2 a=_MaskBasis.xy,b=_MaskBasis.zw,p=i.uv-_MaskOrigin;
+   float det=a.x*b.y-a.y*b.x;
+   float2 uv=float2(p.x*b.y-p.y*b.x,a.x*p.y-a.y*p.x)/det;
+   float aspect=length(a*_MainTex_TexelSize.zw)/max(.0001,length(b*_MainTex_TexelSize.zw));
+   float2 q=(uv-_MaskCenterSize.xy)*float2(aspect,1);
+   float s,c;sincos(_MaskSettings.y,s,c);q=float2(c*q.x+s*q.y,-s*q.x+c*q.y);
+   float2 halfSize=_MaskCenterSize.zw*.5*float2(aspect,1);
+   float d=q.y;
+   if(_MaskSettings.x>.5)d=halfSize.y-abs(q.y);
+   if(_MaskSettings.x>1.5)d=(1-length(q/halfSize))*min(halfSize.x,halfSize.y);
+   if(_MaskSettings.x>2.5){float r=min(halfSize.x,halfSize.y)*_MaskSettings.w;float2 e=abs(q)-halfSize+r;d=r-length(max(e,0))-min(max(e.x,e.y),0);}
+   float edge=max(fwidth(d),_MaskSettings.z);float4 color=tex2D(_MainTex,i.uv);
+   color.a*=smoothstep(-edge*.5,edge*.5+.000001,d);return color;
+ }
+ float layoutMask(float2 uv){float2 p=layoutUV(uv);return step(_ClipCrop.x,p.x)*step(p.x,1-_ClipCrop.y)*step(_ClipCrop.z,p.y)*step(p.y,1-_ClipCrop.w)*_LayoutOpacity;}
  float4 layoutLayer(v2f_img i):SV_Target {float2 uv=layoutUV(i.uv);float4 c=tex2D(_MainTex,uv);c.a*=layoutMask(i.uv);return c;}
  // Intermediate textures are straight-alpha, linear ARGBHalf. Interpolation
  // across displaced coverage is premultiplied, then converted back to straight.
@@ -70,6 +92,11 @@ Shader "Hidden/Creator/StoryEffects" {
  Pass {CGPROGRAM
  #pragma vertex vert_img
  #pragma fragment layoutLayer
+ ENDCG}
+ Pass {CGPROGRAM
+ #pragma target 3.0
+ #pragma vertex vert_img
+ #pragma fragment geometricMask
  ENDCG}
  }
 }

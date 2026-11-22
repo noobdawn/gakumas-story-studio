@@ -51,6 +51,7 @@ public sealed class CreatorScreenMedia:IDisposable {
  readonly string root,decoder,sessionDirectory;readonly Transform parent;readonly CreatorUIGraph graph;readonly Dictionary<string,Item> items=new Dictionary<string,Item>();
  CreatorMediaDraw[] draws=Array.Empty<CreatorMediaDraw>();public string Error{get;private set;}
  int dragControl;
+ CreatorMediaDraw layoutHandle;
  string selected,dragId;bool editable,snap,resizing;Vector2 down,pivot;Rect originalBounds;EditEvent edit;float dragScale=1;Vector2 delta;readonly Queue<EditEvent> events=new Queue<EditEvent>();
  public CreatorScreenMedia(Shader shader,string directory,Transform parent,string decoderPath,string sessionDirectory){
   root=string.IsNullOrEmpty(directory)?null:Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar;
@@ -136,7 +137,19 @@ public sealed class CreatorScreenMedia:IDisposable {
   if(items.Values.Any(i=>i.video))yield return new WaitForEndOfFrame();
   try{graph.Set(draws.Select(d=>new CreatorUIDraw{texture=d.id,points=d.points,uv=d.uv,color=d.color,linearInput=d.kind=="video"&&QualitySettings.activeColorSpace==ColorSpace.Linear}).ToArray());}catch(Exception e){Error=e.Message;}
  }
- public void Select(string id,bool canEdit,bool useSnap){selected=id;editable=canEdit;snap=useSnap;if(dragId!=null&&(dragId!=id||!editable))End();}
+ public void Select(string id,bool canEdit,bool useSnap,CreatorCompositionNode node=null){
+  selected=id;editable=canEdit;snap=useSnap;
+  if(dragId!=null&&(dragId!=id||!editable))End();
+  layoutHandle=null;
+  if(node==null||!canEdit)return;
+  var layout=node.layout??new CreatorCompositionLayout();
+  float aspect=(float)Screen.width/Math.Max(1,Screen.height);
+  var corners=new[]{Vector2.zero,Vector2.right,Vector2.one,Vector2.up};
+  var points=new float[8];
+  for(int i=0;i<corners.Length;i++){var p=layout.Point(corners[i],aspect);points[i*2]=p.x;points[i*2+1]=p.y;}
+  var pivot=layout.Point(new Vector2(.5f+layout.originX,.5f+layout.originY),aspect);
+  layoutHandle=new CreatorMediaDraw{id=id,points=points,pivot=new[]{pivot.x,pivot.y}};
+ }
  public EditEvent TakeEvent(){if(events.Count>0)return events.Dequeue();var result=edit;edit=null;return result;}
  void Push(string phase){var value=new EditEvent{id=dragId,phase=phase,dx=delta.x,dy=delta.y,scale=dragScale};if(phase=="move")edit=value;else{if(edit!=null){events.Enqueue(edit);edit=null;}events.Enqueue(value);}}
  void End(){if(dragId==null)return;Push("end");dragId=null;}
@@ -155,7 +168,7 @@ public sealed class CreatorScreenMedia:IDisposable {
  float Snap(float low,float high,IEnumerable<float> targets){float best=7,result=0;foreach(float point in targets)foreach(float edge in new[]{low,(low+high)*.5f,high})if(Mathf.Abs(point-edge)<best){result=point-edge;best=Mathf.Abs(result);}return result;}
  public void Handles(){
   if(dragId==null)ReleaseDragControl();
-  var d=draws.FirstOrDefault(x=>x.id==selected);if(d==null||!editable)return;var e=Event.current;var bounds=Bounds(d);var handle=new Rect(bounds.xMax-6,bounds.yMax-6,12,12);int control=GUIUtility.GetControlID(FocusType.Passive);
+  var d=layoutHandle??draws.FirstOrDefault(x=>x.id==selected);if(d==null||!editable)return;var e=Event.current;var bounds=Bounds(d);var handle=new Rect(bounds.xMax-6,bounds.yMax-6,12,12);int control=GUIUtility.GetControlID(FocusType.Passive);
   if(e.type==EventType.Repaint){var old=GUI.color;GUI.color=new Color(.35f,.8f,1,.9f);GUI.DrawTexture(new Rect(bounds.xMin,bounds.yMin,bounds.width,1),Texture2D.whiteTexture);GUI.DrawTexture(new Rect(bounds.xMin,bounds.yMax,bounds.width,1),Texture2D.whiteTexture);GUI.DrawTexture(new Rect(bounds.xMin,bounds.yMin,1,bounds.height),Texture2D.whiteTexture);GUI.DrawTexture(new Rect(bounds.xMax,bounds.yMin,1,bounds.height),Texture2D.whiteTexture);GUI.DrawTexture(handle,Texture2D.whiteTexture);GUI.color=old;}
   if(e.type==EventType.MouseDown&&e.button==0&&(handle.Contains(e.mousePosition)||bounds.Contains(e.mousePosition))){dragId=d.id;down=e.mousePosition;pivot=new Vector2(d.pivot[0]*Screen.width,(1-d.pivot[1])*Screen.height);originalBounds=bounds;resizing=handle.Contains(down);delta=Vector2.zero;dragScale=1;dragControl=control;GUIUtility.hotControl=control;Push("begin");e.Use();}
   else if(e.type==EventType.MouseDrag&&dragId==d.id){if(resizing){var initial=down-pivot;dragScale=Mathf.Clamp(Vector2.Dot(e.mousePosition-pivot,initial)/Mathf.Max(1,initial.sqrMagnitude),.01f,100);}else{var movement=e.mousePosition-down;if(snap&&!e.alt){var xs=new List<float>{0,Screen.width*.5f,Screen.width};var ys=new List<float>{0,Screen.height*.5f,Screen.height};foreach(var other in draws.Where(x=>x.id!=dragId)){var b=Bounds(other);xs.AddRange(new[]{b.xMin,b.center.x,b.xMax});ys.AddRange(new[]{b.yMin,b.center.y,b.yMax});}movement.x+=Snap(originalBounds.xMin+movement.x,originalBounds.xMax+movement.x,xs);movement.y+=Snap(originalBounds.yMin+movement.y,originalBounds.yMax+movement.y,ys);}delta=new Vector2(movement.x/Screen.width,-movement.y/Screen.height);}Push("move");e.Use();}

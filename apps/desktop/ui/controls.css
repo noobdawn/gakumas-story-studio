@@ -18,3 +18,11 @@ textarea{line-height:1.6}
 .task-progress[data-state=running] [data-progress-title]::before{content:'';display:inline-block;width:7px;height:7px;margin-right:8px;border-radius:50%;background:#a9b9ff;animation:task-pulse 1.4s ease-in-out infinite alternate}
 @keyframes task-pulse{to{opacity:.3}}
 @media(prefers-reduced-motion:reduce){.task-progress[data-state=running] [data-progress-title]::before{animation:none}}
+
+.clip-tabs,.clip-mask-actions,.clip-gain{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.clip-tabs button,.clip-mask-actions button,[data-mask-remove]{border:1px solid var(--line,#464953);border-radius:4px;background:transparent;color:inherit;padding:4px 9px;cursor:pointer}
+.clip-tabs button[aria-pressed=true]{border-color:#86b7df;color:#b3d8fb;background:#283c4c}
+.clip-tabs.minor{margin:4px 0}.clip-tabs.minor button{font-size:11px;padding:2px 7px}
+.clip-gain input[type=range]{flex:1 1 90px;min-width:60px}.clip-gain input[type=number]{width:78px}
+.clip-info summary,.inspector-section>summary{cursor:pointer;font-weight:600;padding:4px 0}
+.shot-cache-ready{position:absolute;bottom:0;left:0;width:100%;height:3px;pointer-events:none}.shot-cache-ready i{position:absolute;height:100%;background:#63bba2}

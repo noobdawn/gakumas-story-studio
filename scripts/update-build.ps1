@@ -1,4 +1,4 @@
-param([string]$Unity,[string]$Message='Update local build',[string]$Tools,[string]$PythonRuntime,[switch]$ReusePlayer)
+param([string]$Unity,[string]$Message='Update local build',[string]$Tools,[string]$PythonRuntime,[switch]$ReusePlayer,[switch]$StagedCheckpoint)
 $ErrorActionPreference='Stop'
 $repoRoot=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $build=Join-Path $repoRoot 'build'
@@ -75,7 +75,9 @@ try {
  & $checkPython (Join-Path $PSScriptRoot 'package.py') --python $PythonRuntime --tools $Tools --player $player --output $candidate --no-archive
  if($LASTEXITCODE){throw 'Package failed'}
  & $checkPython (Join-Path $PSScriptRoot 'verify-package.py') $candidate;if($LASTEXITCODE){throw 'Portable check failed'}
- & $checkPython (Join-Path $PSScriptRoot 'checkpoint.py') --message $Message;if($LASTEXITCODE){throw 'Source checkpoint failed'}
+ $checkpointArgs=@('--message',$Message)
+ if($StagedCheckpoint){$checkpointArgs+='--staged'}
+ & $checkPython (Join-Path $PSScriptRoot 'checkpoint.py') @checkpointArgs;if($LASTEXITCODE){throw 'Source checkpoint failed'}
  AssertIdle
  foreach($target in @($build,$candidate,$previous)){AssertLocalPath $target}
  if (Test-Path -LiteralPath $build) {Move-Item -LiteralPath $build -Destination $previous}

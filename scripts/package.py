@@ -11,6 +11,7 @@ def main():
         if not (a.tools/filename).is_file():raise SystemExit('Missing tool: '+filename)
     if not (a.tools/'THIRD_PARTY_NOTICES.txt').is_file():raise SystemExit('Runtime tools require redistribution notices')
     if not (a.player/'creator-dedicated-effects-v2').is_file():raise SystemExit('Player lacks dedicated effects contract')
+    if not (a.player/'creator-shot-cache-v1').is_file():raise SystemExit('Rebuild Player with shot caching and clip masks')
     if not (a.player/'creator-thought-filter-v1').is_file():raise SystemExit('Player lacks thought vignette filter')
     if not (a.player/'creator-antialiasing-v1').is_file():raise SystemExit('Player lacks MSAA / export supersampling; rebuild Player')
     if not (a.player/'creator-actor-contacts-v2').is_file():raise SystemExit('Player lacks face and garment contacts; rebuild Player')

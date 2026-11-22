@@ -352,6 +352,13 @@ def main():
             command += ['-parentHWND', str(args.parent_hwnd), 'delayed']
         if not args.legacy_listen:
             command += ['-creator-connect']
+        shot_cache = None
+        if (player.parent/'creator-shot-cache-v1').is_file():
+            from shot_cache import ShotCache
+            shot_root = Path(output)/'shots'
+            shot_root.mkdir()
+            command += ['-creator-shot-root', str(shot_root)]
+            shot_cache = ShotCache(command, shot_root)
         proc = subprocess.Popen(command, cwd=str(player.parent))
         try:
             deadline = time.monotonic() + 90
@@ -496,7 +503,7 @@ def main():
                     prefix = '/' + token + '/ui/'
                     if not self.path.startswith(prefix): return self.send_error(404)
                     name = self.path[len(prefix):].split('?', 1)[0] or 'index.html'
-                    if name not in ('story-timeline.js', 'story-editor.js', 'story-voice.js', 'notifications.js', 'export-queue.js', 'post-effects.js', 'post-effects-editor.js', 'settings-file-links.js','color-inputs.js','character-colors.js','character-color-editor.js','code-ui.js', 'composition.js', 'composition-editor.js', 'audio-effects-preview.js', 'panel-selection.js', 'project-removal.js', 'timeline-edit.js', 'timeline-groups.js', 'screen-media.js', 'screen-media-editor.js', 'render-settings.js', 'ui-transition-graph.js', 'ui-transition-engine.js', 'ui-transitions.js', 'ui-transition-editor.js', 'animation-layers.js', 'clip-sources.js', 'animation-layer-ui.js', 'asset-settings.js', 'scene-catalog.js', 'index.html', 'styles.css', 'desktop.css', 'controls.css', 'asset-settings.css', 'layout-responsive.css', 'task-progress.js', 'lipsync.js', 'fades.js', 'classroom-props.js', 'app.js', 'motion-names.js', 'game-asset-aliases.js', 'pronunciation.js', 'layout-schema.js', 'layout.js', 'embed.js'):
+                    if name not in ('story-timeline.js', 'story-editor.js', 'story-voice.js', 'notifications.js', 'export-queue.js', 'post-effects.js', 'post-effects-editor.js', 'settings-file-links.js','color-inputs.js','character-colors.js','character-color-editor.js','code-ui.js', 'composition.js', 'composition-editor.js', 'audio-effects-preview.js', 'panel-selection.js', 'project-removal.js', 'timeline-edit.js', 'timeline-groups.js', 'screen-media.js', 'screen-media-editor.js', 'render-settings.js', 'ui-transition-graph.js', 'ui-transition-engine.js', 'ui-transitions.js', 'ui-transition-editor.js', 'animation-layers.js', 'clip-sources.js', 'clip-properties.js', 'clip-properties-editor.js', 'shot-preview.js', 'animation-layer-ui.js', 'asset-settings.js', 'scene-catalog.js', 'index.html', 'styles.css', 'desktop.css', 'controls.css', 'asset-settings.css', 'layout-responsive.css', 'task-progress.js', 'lipsync.js', 'fades.js', 'classroom-props.js', 'app.js', 'motion-names.js', 'game-asset-aliases.js', 'pronunciation.js', 'layout-schema.js', 'layout.js', 'embed.js'):
                         return self.send_error(404)
                     if name=='game-asset-aliases.js':
                         data=alias_script
@@ -516,12 +523,18 @@ def main():
                     request_start = time.perf_counter()
                     message = {}
                     endpoint = self.path.removeprefix('/' + token + '/')
-                    if self.path != '/' + token + '/' + endpoint or endpoint not in ('state', 'thumbnail', 'capture', 'bounds', 'shutdown', 'export-start', 'export-frame', 'export-enqueue', 'export-status', 'export-finish', 'export-cancel', 'audio-effects') or self.headers.get('Origin') != origin:
+                    if self.path != '/' + token + '/' + endpoint or endpoint not in ('state', 'thumbnail', 'capture', 'bounds', 'shutdown', 'export-start', 'export-frame', 'export-enqueue', 'export-status', 'export-finish', 'export-cancel', 'audio-effects', 'shot-sample') or self.headers.get('Origin') != origin:
                         return self.send_error(403)
                     try:
-                        message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint in ('state','export-frame','export-enqueue') else 20000)
+                        message = self.read_json(2*1024*1024 if endpoint=='export-start' else 1024*1024 if endpoint in ('state','export-frame','export-enqueue','shot-sample') else 20000)
                         parsed_at = time.perf_counter()
-                        if endpoint == 'state':
+                        if endpoint == 'shot-sample':
+                            if not shot_cache or export_job is not None:
+                                raise ValueError('当前无法生成拍摄缓存')
+                            reply = shot_cache.sample(message)
+                        elif endpoint == 'state':
+                            message.pop('writeShot', None)
+                            message['readShot'] = shot_cache.lookup(message.get('readShot')) if shot_cache and export_job is None else None
                             if export_job is not None and getattr(export_job,'queue_capacity',0):raise ValueError('状态队列导出正在使用场景')
                             # GPU lifecycle and frame mode are selected by the active job,
                             # never by a caller-supplied state packet.
@@ -557,7 +570,7 @@ def main():
                         elif endpoint == 'capture':
                             width,height=message.get('width'),message.get('height')
                             if export_job is not None or type(width) is not int or type(height) is not int or not 64<=width<=1024 or not 64<=height<=1024:raise ValueError('截图尺寸无效或正在导出')
-                            request={'token':token,'id':message.get('id',0),'kind':'frame','frameWidth':width,'frameHeight':height,'includeEditorGizmo':editor_gizmo,'includeUiOverlay':ui_capable}
+                            request={'token':token,'id':message.get('id',0),'kind':'frame','frameWidth':width,'frameHeight':height,'includeEditorGizmo':editor_gizmo,'includeUiOverlay':ui_capable,'previewCapture':True}
                             with lock:
                                 conn.sendall((json.dumps(request,separators=(',', ':'))+'\n').encode())
                                 reply=json.loads(stream.readline(4097))
@@ -677,6 +690,7 @@ def main():
             server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             origin = 'http://127.0.0.1:' + str(server.server_port)
             url = origin + '/' + token + '/ui/?' + ('embedded=1&' if embedded else '') + ('performance=1' if performance else 'performance=0') + ('&physicsAvailable=0' if args.no_cloth else '') + ('&physicsModes=1' if (player.parent/'creator-physics-modes-v1').is_file() else '') + ('&settings=1' if global_settings else '&settings=0') + ('&assets=1' if asset_features else '&assets=0') + ('&costumes=1' if costume_capable else '&costumes=0') + ('&costumePhysics=1' if (player.parent/'creator-costume-physics-v1').is_file() else '&costumePhysics=0') + ('&hairPhysics=1' if (player.parent/'creator-hair-physics-v1').is_file() else '&hairPhysics=0') + ('&arrangement=1' if arrangement else '&arrangement=0') + ('&editorGizmo=1' if editor_gizmo else '&editorGizmo=0') + ('&gizmoTrs=1' if gizmo_trs else '&gizmoTrs=0') + ('&editorGizmoTest=1' if editor_gizmo and os.environ.get('CREATOR_TEST_INSTANCE')=='1' and os.environ.get('CREATOR_GIZMO_TEST')=='1' else '&editorGizmoTest=0') + ('&dialogueStyles=1' if dialogue_styles else '&dialogueStyles=0') + ('&gameDialogue=1' if game_dialogue else '&gameDialogue=0') + ('&dialogueColors=1' if (player.parent/'creator-dialogue-colors-v1').is_file() else '&dialogueColors=0') + ('&faces=1' if faces else '&faces=0') + ('&faceDecals=1' if face_decals else '&faceDecals=0') + ('&roundEyes=1' if round_eyes else '&roundEyes=0') + ('&headEffects=1' if head_effects else '&headEffects=0') + ('&eyeMaterials=1' if eye_materials else '&eyeMaterials=0') + ('&eyeBones=1' if eye_bones else '&eyeBones=0') + ('&export=1' if export_capable else '&export=0') + ('&idle=1' if idle_capable else '&idle=0') + ('&motionBlend=1' if blend_capable else '&motionBlend=0') + ('&uiTransitions=2' if ui_graph_capable else '&uiTransitions=1' if ui_capable else '&uiTransitions=0') + ('&animationLayers=1' if layers_capable else '&animationLayers=0') + ('&classroomChairs=1' if prop_capable else '&classroomChairs=0') + ('&classroomProps=1' if generic_props else '&classroomProps=0') + ('&renderSettings=1' if (player.parent/'creator-render-settings-v1').is_file() else '&renderSettings=0') + ('&screenMedia=1' if (player.parent/'creator-screen-media-v1').is_file() else '&screenMedia=0') + ('&postEffects=1' if (player.parent/'creator-post-effects-v1').is_file() else '&postEffects=0') + ('&composition=1' if (player.parent/'creator-composition-v1').is_file() else '&composition=0') + ('&codeUI=1' if (player.parent/'creator-code-ui-v1').is_file() else '&codeUI=0') + '&actors=' + ','.join(actor_codes) + '&missingShapes=' + quote(','.join(missing_shapes),safe=',:') + '&faceNames=' + quote(','.join(face_names), safe=',') + '&scenes=' + ','.join(available_scenes) + '&motions=' + ','.join(available_motions)
+            if shot_cache: url += '&shotCache=1'
             print('Editor:', url, flush=True)
             print('Embedded Player ready.' if embedded else 'Player preview opens in a separate window. Close this host to stop the session.', flush=True)
             if not args.no_browser: webbrowser.open(url)
@@ -693,6 +707,7 @@ def main():
                 finally:server.server_close(); stream.close(); conn.close()
         finally:
             listener.close()
+            if shot_cache: shot_cache.close()
             if proc.poll() is None:
                 proc.terminate()
                 try: proc.wait(timeout=10)
