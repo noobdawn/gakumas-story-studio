@@ -54,11 +54,18 @@ function dispatchControl(command,args){if(!rendererReady||!win||win.isDestroyed(
 
 
 let codeUIRenderer;
-ipcMain.handle('code-ui:render',(event,args)=>{checkSender(event);codeUIRenderer??=require('./code-ui-renderer').create();return codeUIRenderer.render(args);});
+for(const [channel,background] of [['code-ui:render',false],['code-ui:warm',true]]){
+  ipcMain.handle(channel,(event,args)=>{checkSender(event);codeUIRenderer??=require('./code-ui-renderer').create();return codeUIRenderer.render(args,background);});
+}
+ipcMain.on('code-ui:interrupt',event=>{if(trustedEditor(event))codeUIRenderer?.interrupt();});
+ipcMain.on('code-ui:reset',event=>{if(trustedEditor(event)){codeUIRenderer?.close();codeUIRenderer=null;}});
 app.on('before-quit',()=>codeUIRenderer?.close());
 
+function trustedEditor(event) {
+  return win && !win.isDestroyed() && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && event.senderFrame?.url === sessionUrl;
+}
 function checkSender(event) {
-  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== sessionUrl)
+  if (!trustedEditor(event))
     throw new Error('不允许的工程操作来源');
 }
 ipcMain.handle('assets:motion-thumbnails',(event,ids)=>{checkSender(event);if(closing||!previewPlayer)throw Error('动画预览不可用');return motionThumbnails.listStatic(ids,previewPlayer,previewBundles);});

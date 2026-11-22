@@ -209,10 +209,10 @@
   const activeAt = (c,time) => time>=c.start && (time<c.start+c.len || (time===duration && Math.abs(c.start+c.len-duration)<1e-6));
   const clipActive = c => activeAt(c,state.current);
   const copyState = () => structuredClone(state);
-  function remember(before,positioned=[]){CreatorStory.rebase(state,before);CreatorTimelineEdit.prune(state);CreatorComposition.reconcile(state,before,positioned);shotCache?.changed(before,state);assetCatalogRevision++;undoStack.push(before);if(undoStack.length>50)undoStack.shift();redoStack.length=0;updateHistoryButtons();scheduleProjectLabel();}
+  function remember(before,positioned=[]){CreatorStory.rebase(state,before);CreatorTimelineEdit.prune(state);CreatorComposition.reconcile(state,before,positioned);shotCache?.changed(before,state);codePreview?.changed();assetCatalogRevision++;undoStack.push(before);if(undoStack.length>50)undoStack.shift();redoStack.length=0;updateHistoryButtons();scheduleProjectLabel();}
   function updateHistoryButtons(){$('#undo').disabled=undoStack.length===0;$('#redo').disabled=redoStack.length===0;}
-  function historyUndo(){finishGizmoEdit();if(!undoStack.length)return;redoStack.push(copyState());state=undoStack.pop();shotCache?.changed(redoStack.at(-1),state);clearPanelSelections();selectedClipIds.clear();soloClipId=null;selectedAsset=null;render();updateHistoryButtons();scheduleProjectLabel();notify('已撤销时间轴编辑');}
-  function historyRedo(){finishGizmoEdit();if(!redoStack.length)return;undoStack.push(copyState());state=redoStack.pop();shotCache?.changed(undoStack.at(-1),state);clearPanelSelections();selectedClipIds.clear();soloClipId=null;selectedAsset=null;render();updateHistoryButtons();scheduleProjectLabel();notify('已重做时间轴编辑');}
+  function historyUndo(){finishGizmoEdit();if(!undoStack.length)return;redoStack.push(copyState());state=undoStack.pop();shotCache?.changed(redoStack.at(-1),state);codePreview?.changed();clearPanelSelections();selectedClipIds.clear();soloClipId=null;selectedAsset=null;render();updateHistoryButtons();scheduleProjectLabel();notify('已撤销时间轴编辑');}
+  function historyRedo(){finishGizmoEdit();if(!redoStack.length)return;undoStack.push(copyState());state=redoStack.pop();shotCache?.changed(undoStack.at(-1),state);codePreview?.changed();clearPanelSelections();selectedClipIds.clear();soloClipId=null;selectedAsset=null;render();updateHistoryButtons();scheduleProjectLabel();notify('已重做时间轴编辑');}
   const notifications=CreatorNotifications({toast:$('#toast'),button:$('#notification-log')}),notify=(message,options)=>notifications.show(message,options);
   $('#notification-log').onclick=()=>{const text=notifications.history().reverse().map(r=>`[${r.time}] ${r.message}${r.detail?'\n'+r.detail:''}`).join('\n\n');showModal(`<div class="modal-head"><div><h2>消息记录</h2><p>保留本次会话最近 50 条，可选中并复制完整信息。</p></div><button class="icon-button" data-close aria-label="关闭">${icon('close')}</button></div><div class="modal-body"><textarea id="notification-history" aria-label="消息记录" readonly>${esc(text||'暂无消息')}</textarea></div>`);};
   function treeRow(o, cls='') {return `<div class="tree-row ${cls} ${hierarchySelection.ids.includes(hierarchyKey(o))?'selected':''}" data-object="${esc(o.id)}" data-selection-key="${esc(hierarchyKey(o))}"><span class="tree-toggle">${o.id==='scene'?icon(treeExpanded?'down':'chevron'):''}</span><span class="row-icon">${icon(o.icon)}</span><span class="row-name">${esc(o.name)}</span><span data-visibility-indicator="${esc(o.id)}" title="${evaluated(o,'visible')?'已启用':'已关闭'}" style="opacity:${evaluated(o,'visible')?'1':'.3'}">${icon('eye')}</span></div>`;}
@@ -425,11 +425,19 @@
   }
   let cacheBars='',cachePointer=false;
   const cacheAvailable=new URLSearchParams(location.search).get('shotCache')==='1';
+  const idleBlocked=()=>playing||exporting||translationCooking||projectBusy||timelineEditBusy||drag||gizmoEdit||mediaEditor.dragging()||clipProperties.dragging()||cachePointer||bridgeBusy||layerFacePending.size||!$('#overlay').classList.contains('hidden');
+  const codePreview=window.codeUIAPI?.warm&&new URLSearchParams(location.search).get('codeUI')==='1'?CreatorCodeUIPreview.create({
+    state:()=>state,blocked:idleBlocked,render:args=>window.codeUIAPI.render(args),warm:args=>window.codeUIAPI.warm(args),
+    cancelWarm:()=>window.codeUIAPI.interrupt(),reset:()=>window.codeUIAPI.reset(),
+    status:value=>{const el=$('#code-ui-cache-status');el.hidden=!value;el.dataset.state=value;
+      el.textContent=({preparing:'正在缓存 UI',ready:'附近 UI 已缓存',partial:'UI 已部分缓存'})[value]||'';},
+    error:err=>console.warn('代码 UI 暂缓预计算',err.message)
+  }):null;
   const shotCache=cacheAvailable?CreatorShotPreview.create({
     fps:()=>fps,time:()=>state.current,id,physics:()=>physicsAvailable&&state.globalSettings.physicsEnabled,
     area:()=>{if(state.compositionVersion!==1||!state.tracks.some(t=>t.type==='world'&&t.enabled!==false))return null;
       const t=Math.min(state.current,Math.max(0,duration-frame)),cam=activeCamera(t);return cam&&activeTransformClip(cam,t);},
-    blocked:()=>playing||exporting||translationCooking||projectBusy||drag||gizmoEdit||mediaEditor.dragging()||clipProperties.dragging()||cachePointer||bridgeBusy||layerFacePending.size||!$('#overlay').classList.contains('hidden'),
+    blocked:idleBlocked,
     size:()=>{const r=$('.viewport').getBoundingClientRect(),aspect=r.width>0&&r.height>0?r.width/r.height:uiAspect(),scale=Math.min(1,640/Math.max(r.width,r.height,1));
       const w=Math.max(16,Math.min(640,Math.round((r.width||640)*scale)));return [w,Math.max(16,Math.min(640,Math.round(w/aspect)))];},
     sample:t=>playerSnapshot(t,true),post:data=>hostPost('shot-sample',data),
@@ -438,28 +446,38 @@
       const view=$('.shot-cache-ready');if(view)view.innerHTML=cacheBars;},
     error:err=>{console.warn('拍摄缓存暂缓',err.message);const bar=$('.shot-cache-ready');if(bar)bar.title='拍摄缓存暂缓 · '+err.message;}
   }):null;
-  if(shotCache){
-    document.addEventListener('pointerdown',()=>{cachePointer=true;shotCache.interrupt();},true);
-    for(const event of ['pointerup','pointercancel','blur'])window.addEventListener(event,()=>{cachePointer=false;shotCache.interrupt();},true);
-    document.addEventListener('keydown',shotCache.interrupt,true);
-    let timer,stopped=false;const pump=async()=>{try{await shotCache.step();}finally{if(!stopped)timer=setTimeout(pump,55);}};timer=setTimeout(pump,1300);
-    window.addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);shotCache.dispose();},{once:true});
+  if(shotCache||codePreview){
+    const interrupt=()=>{shotCache?.interrupt();codePreview?.interrupt();};
+    document.addEventListener('pointerdown',()=>{cachePointer=true;interrupt();},true);
+    for(const event of ['pointerup','pointercancel','blur'])window.addEventListener(event,()=>{cachePointer=false;interrupt();},true);
+    document.addEventListener('keydown',interrupt,true);
+    function pump(cache,delay){
+      if(!cache)return;
+      let timer,stopped=false;
+      const tick=async()=>{try{await cache.step();}catch(err){console.warn('预览缓存准备失败',err.message);}
+        finally{if(!stopped)timer=setTimeout(tick,delay);}};
+      timer=setTimeout(tick,1000);
+      window.addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);},{once:true});
+    }
+    pump(shotCache,55);pump(codePreview,25);
+    window.addEventListener('pagehide',()=>{shotCache?.dispose();codePreview?.reset();},{once:true});
   }
   function stopForPreviewError(reason){const active=playing||audioEffectsPreview.isWaiting();if(active)setPlaying(false);uiSceneGate=null;bridgeLast='';$('#bridge-status').textContent=reason;if(active)notify('播放已暂停',{kind:'error',sticky:true,detail:reason+'\n请检查对应场景或转场片段的素材引用，再重新播放。'});}
   function syncPlayer() {
     if(uiSceneGate&&Math.abs(state.current-uiSceneGate.time)>1e-6)uiSceneGate=null;
-    if(exporting)return;try{uiPlan();}catch(error){stopForPreviewError(error.message);return;} if(missingScene()){stopForPreviewError('场景素材不可用：'+missingScene());return;} if(unsupportedScale()){document.querySelector('#bridge-status').textContent='当前 Player 不支持工程缩放，请使用新版三轴实验入口';bridgeLast='';return;} if(missingProps()){document.querySelector('#bridge-status').textContent='当前 Player 不支持工程中的教室道具';bridgeLast='';return;} if(missingIdle()){document.querySelector('#bridge-status').textContent='常驻动画不可用：'+missingIdle().name;bridgeLast='';return;} const missingMotion=state.tracks.filter(t=>t.type==='animation'&&t.enabled!==false).flatMap(t=>t.clips).find(c=>clipActive(c)&&String(c.assetId||'').startsWith('asset-film-')&&!motionDefinition(c.assetId));if(missingMotion){document.querySelector('#bridge-status').textContent='动作素材不可用：'+missingMotion.name;bridgeLast='';return;} if(actorUnavailable()){document.querySelector('#bridge-status').textContent=actorUnavailable().name+' 的本地资源或 Player 能力不可用';bridgeLast='';return;} let snapshot;try{const pending=prepareLayerFaces();if(pending.length){document.querySelector('#bridge-status').textContent='正在读取常驻表情与面部曲线…';return;}const sample=shotCache&&playing?Math.floor(state.current*fps+1e-7)/fps:state.current;snapshot=playerSnapshot(sample);const cached=shotCache?.lookup(sample,snapshot);if(cached)snapshot.readShot=cached;}catch(error){document.querySelector('#bridge-status').textContent=error.message;bridgeLast='';return;}if(!snapshot)return;
+    if(exporting)return;try{uiPlan();}catch(error){stopForPreviewError(error.message);return;} if(missingScene()){stopForPreviewError('场景素材不可用：'+missingScene());return;} if(unsupportedScale()){document.querySelector('#bridge-status').textContent='当前 Player 不支持工程缩放，请使用新版三轴实验入口';bridgeLast='';return;} if(missingProps()){document.querySelector('#bridge-status').textContent='当前 Player 不支持工程中的教室道具';bridgeLast='';return;} if(missingIdle()){document.querySelector('#bridge-status').textContent='常驻动画不可用：'+missingIdle().name;bridgeLast='';return;} const missingMotion=state.tracks.filter(t=>t.type==='animation'&&t.enabled!==false).flatMap(t=>t.clips).find(c=>clipActive(c)&&String(c.assetId||'').startsWith('asset-film-')&&!motionDefinition(c.assetId));if(missingMotion){document.querySelector('#bridge-status').textContent='动作素材不可用：'+missingMotion.name;bridgeLast='';return;} if(actorUnavailable()){document.querySelector('#bridge-status').textContent=actorUnavailable().name+' 的本地资源或 Player 能力不可用';bridgeLast='';return;} let snapshot;try{const pending=prepareLayerFaces();if(pending.length){document.querySelector('#bridge-status').textContent='正在读取常驻表情与面部曲线…';return;}const sample=(shotCache||codePreview)&&playing?Math.floor(state.current*fps+1e-7)/fps:state.current;snapshot=playerSnapshot(sample);const cached=shotCache?.lookup(sample,snapshot);if(cached)snapshot.readShot=cached;}catch(error){document.querySelector('#bridge-status').textContent=error.message;bridgeLast='';return;}if(!snapshot)return;
     const key=JSON.stringify(snapshot); if(key===bridgeLast){refreshCostumeStatus();return;} bridgeLast=key;
     bridgePending={...snapshot,id:++bridgeId}; sendPlayer();
   }
   let lastBridgeFailure='';
   async function sendPlayer() {
     if(bridgeBusy||!bridgePending)return;
-    bridgeBusy=true; const message=bridgePending; bridgePending=null;
+    bridgeBusy=true; const message=bridgePending,revision=codePreview?.revision; bridgePending=null;
+    const obsolete=()=>revision!==codePreview?.revision||exporting||(!playing&&bridgePending&&message.composition?.time!==bridgePending.composition?.time);
     const status=document.querySelector('#bridge-status');
-    try { await prepareCodeUI(message);const prefix=location.pathname.split('/')[1]; const response=await fetch('/'+prefix+'/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message)}); const raw=await response.text();let reply;try{reply=JSON.parse(raw);}catch{throw Error('预览接口返回异常内容（HTTP '+response.status+'），请重启创作器后重试');}if(!response.ok||!reply.ok||reply.id!==message.id)throw Error(reply.error||'预览请求失败（HTTP '+response.status+'）');lastBridgeFailure='';if(uiSceneGate&&message.sceneId===uiSceneGate.sceneId&&Math.abs(state.current-uiSceneGate.time)<1e-6){if(reply.sceneReady)uiSceneGate=null;else{bridgeLast='';status.textContent='正在加载场景轨道指定的场景…';}}consumeGizmoEvent(reply.gizmoEvent);if(!clipProperties.consumeLayout(reply.mediaEvent))mediaEditor.consume(reply.mediaEvent);clipProperties.consume(reply.maskEvent);if(gizmoTrsSupported&&['move','rotate','scale'].includes(reply.gizmoToolMode)&&reply.gizmoToolMode!==gizmoMode)setGizmoMode(reply.gizmoToolMode); status.textContent=uiSceneGate?'正在加载场景轨道指定的场景…':(new URLSearchParams(location.search).get('embedded')==='1'?'Unity 已应用':'Unity 已应用 · 独立窗口')+(pendingCostume()?' · 所选服装尚未应用，预览为基础服':'')+(message.subtitleStyle==='game'&&!gameDialogue?' · 游戏对白素材不可用，已回退标准样式':'')+(performance?(idleSupported?'':' · 旧版 Player 不支持待机'):' · 动作、衣物和场景样本未加载'); }
-    catch(error) { const reason='画面同步失败：'+error.message;bridgeLast='';uiSceneGate=null;if(lastBridgeFailure!==reason){lastBridgeFailure=reason;notify('画面同步失败',{kind:'error',sticky:true,detail:reason+'\n字幕、场景和滤镜尚未应用；请解决该错误后重新播放。'});}if(playing)setPlaying(false);status.textContent=reason; }
-    finally { bridgeBusy=false; if(bridgePending)sendPlayer(); }
+    try { await prepareCodeUI(message);if(obsolete())return;const prefix=location.pathname.split('/')[1]; const response=await fetch('/'+prefix+'/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message)}); const raw=await response.text();if(obsolete())return;let reply;try{reply=JSON.parse(raw);}catch{throw Error('预览接口返回异常内容（HTTP '+response.status+'），请重启创作器后重试');}if(!response.ok||!reply.ok||reply.id!==message.id)throw Error(reply.error||'预览请求失败（HTTP '+response.status+'）');lastBridgeFailure='';if(uiSceneGate&&message.sceneId===uiSceneGate.sceneId&&Math.abs(state.current-uiSceneGate.time)<1e-6){if(reply.sceneReady)uiSceneGate=null;else{bridgeLast='';status.textContent='正在加载场景轨道指定的场景…';}}if([reply.gizmoEvent,reply.mediaEvent,reply.maskEvent].some(e=>e?.phase==='begin'))codePreview?.interrupt();consumeGizmoEvent(reply.gizmoEvent);if(!clipProperties.consumeLayout(reply.mediaEvent))mediaEditor.consume(reply.mediaEvent);clipProperties.consume(reply.maskEvent);if(gizmoTrsSupported&&['move','rotate','scale'].includes(reply.gizmoToolMode)&&reply.gizmoToolMode!==gizmoMode)setGizmoMode(reply.gizmoToolMode); status.textContent=uiSceneGate?'正在加载场景轨道指定的场景…':(new URLSearchParams(location.search).get('embedded')==='1'?'Unity 已应用':'Unity 已应用 · 独立窗口')+(pendingCostume()?' · 所选服装尚未应用，预览为基础服':'')+(message.subtitleStyle==='game'&&!gameDialogue?' · 游戏对白素材不可用，已回退标准样式':'')+(performance?(idleSupported?'':' · 旧版 Player 不支持待机'):' · 动作、衣物和场景样本未加载'); }
+    catch(error) { if(obsolete())return;const reason='画面同步失败：'+error.message;bridgeLast='';uiSceneGate=null;if(lastBridgeFailure!==reason){lastBridgeFailure=reason;notify('画面同步失败',{kind:'error',sticky:true,detail:reason+'\n字幕、场景和滤镜尚未应用；请解决该错误后重新播放。'});}if(playing)setPlaying(false);status.textContent=reason; }
+    finally { bridgeBusy=false; if(bridgePending)sendPlayer();else if(!exporting&&obsolete()){bridgeLast='';syncPlayer();} }
   }
   setInterval(()=>{if(editorGizmoSupported&&(!document.hidden||editorGizmoTest)&&!exporting&&!gizmoPollPaused&&!bridgeBusy&&!bridgePending&&(selectedGizmo()||mediaEditor.selected()||clipProperties.selection(activeCamera()&&activeTransformClip(activeCamera())))){bridgeLast='';syncPlayer();}},120);
   function syncCameraInspector(){const ctx=cameraContext();if(!ctx||!$('#camera-properties'))return;for(const property of Object.keys(cameraProperties)){const inputs=document.querySelectorAll(`[data-camera-field="${property}"]`);if(!inputs.length)continue;const value=cameraValue(ctx,property);inputs.forEach(input=>{if(document.activeElement!==input)input.value=String(Number((Array.isArray(value)?value[Number(input.dataset.axis)]:value).toFixed(2)));});const button=document.querySelector(`[data-camera-key="${property}"]`);if(button){const has=ctx.inRange&&ctx.clip.propertyKeys?.[property]?.some(k=>Math.abs(k.time-(state.current-ctx.clip.start))<frame/2);button.textContent=has?'◆':'◇';button.classList.toggle('has-key',Boolean(has));button.disabled=!ctx.inRange||ctx.track.locked;button.title=ctx.track?.locked?'轨道已锁定':!ctx.inRange?'将播放头移到对应轨道片段内':has?'删除当前帧的关键帧':'添加当前帧的关键帧';}}const note=$('#camera-key-note');if(note)note.textContent=ctx.track?.locked?'轨道已锁定':ctx.inRange?'◇ 添加关键帧；已有关键帧后，修改数值会自动记录':ctx.object.type==='相机'?'将播放头移至相机片段内，以设置关键帧':'添加变换轨道并将播放头移入片段，以设置关键帧';}
@@ -1712,7 +1730,7 @@
     }
   }
   function updatePlaybackButton(){const waiting=audioEffectsPreview.isWaiting(),label=waiting?'取消声音准备':playing?'暂停':'播放';$('#play').innerHTML=icon(waiting?'close':playing?'pause':'play');$('#play').setAttribute('aria-label',label);$('#play').title=label;$('#play').classList.toggle('preparing',waiting);}
-  function setPlaying(value){shotCache?.interrupt();if(value&&state.current>=duration)state.current=0;if(audioEffectsPreview.gate(value,()=>setPlaying(true))){playing=false;lastTick=0;syncAudio();updatePlaybackButton();return;}if(value){finishGizmoEdit();for(const [key,entry] of audioPlayers)if(entry.failed)retireAudioPlayer(key,entry);}playing=value;lastTick=0;updatePlaybackButton();syncAudio();}
+  function setPlaying(value){shotCache?.interrupt();codePreview?.interrupt();if(value&&state.current>=duration)state.current=0;if(audioEffectsPreview.gate(value,()=>setPlaying(true))){playing=false;lastTick=0;syncAudio();updatePlaybackButton();return;}if(value){finishGizmoEdit();for(const [key,entry] of audioPlayers)if(entry.failed)retireAudioPlayer(key,entry);}playing=value;lastTick=0;updatePlaybackButton();syncAudio();}
   function revealPlayhead(){const scroll=$('.timeline-scroll'),area=scroll.getBoundingClientRect(),ruler=$('#ruler').getBoundingClientRect(),x=ruler.left+ruler.width*state.current/duration;if(x<area.left||x>area.right)scroll.scrollLeft+=x-(area.left+area.right)/2;}
   function seekFrame(frameNumber){setPlaying(false);state.current=Math.max(0,Math.min(Math.round(duration*fps),frameNumber))/fps;updateClock();revealPlayhead();}
   function stepFrame(direction){commitInspectorInput();seekFrame(Math.round(state.current*fps)+direction);}
@@ -1799,11 +1817,22 @@
   }
   function applyProject(next,name,layout){
     finishGizmoEdit();projectLayout=layout;
-    setPlaying(false);for(const [key,entry] of audioPlayers)retireAudioPlayer(key,entry);selectedClipIds.clear();soloClipId=null;setTimelineMode('select');state=normalizeState(next);shotCache?.invalidate();clearPanelSelections();knownTimelineTracks=new Set(state.tracks.map(t=>t.id));collapsedTimelineGroups.clear();clipClipboard=null;selectedAsset=null;treeExpanded=true;assetFilter='全部';assetSourceFilter='all';$('#asset-source-filter').value='all';undoStack.length=0;redoStack.length=0;bridgeLast='';projectName=name;
+    setPlaying(false);for(const [key,entry] of audioPlayers)retireAudioPlayer(key,entry);selectedClipIds.clear();soloClipId=null;setTimelineMode('select');state=normalizeState(next);shotCache?.invalidate();codePreview?.reset();clearPanelSelections();knownTimelineTracks=new Set(state.tracks.map(t=>t.id));collapsedTimelineGroups.clear();clipClipboard=null;selectedAsset=null;treeExpanded=true;assetFilter='全部';assetSourceFilter='all';$('#asset-source-filter').value='all';undoStack.length=0;redoStack.length=0;bridgeLast='';projectName=name;
     render();resizeTimeline();updateHistoryButtons();savedFingerprint=fingerprint();updateProjectLabel();for(const a of state.assets)loadAssetPreview(a);
   }
   async function projectAction(action){if(projectBusy)return;projectBusy=true;try{await action();}catch(e){projectError(e);}finally{projectBusy=false;}}
-  async function prepareCodeUI(snapshot,width=1280,height=null){if(!snapshot?.composition)return;if(new URLSearchParams(location.search).get('codeUI')!=='1'&&state.tracks.some(t=>t.compositionLayout||t.clips.some(c=>c.uiKind==='code'||c.compositionLayout)))throw Error('UI 片段与合成变换需要新版 Player，请更新并重启');const aspect=state.globalSettings.aspect.split(':').map(Number);height??=Math.round(width*aspect[1]/aspect[0]);if(height>1920){width=Math.round(width*1920/height);height=1920;}for(const n of snapshot.composition.nodes){if(n.kind!=='codeUI'||!n.codeUI)continue;if(!window.codeUIAPI)throw Error('代码 UI 需要桌面工作台');n.png=await window.codeUIAPI.render({code:n.codeUI,time:n.localTime,duration:n.duration,width,height});delete n.codeUI;delete n.localTime;delete n.duration;}}
+  async function prepareCodeUI(snapshot,width,height){
+    if(!snapshot?.composition)return;
+    if(new URLSearchParams(location.search).get('codeUI')!=='1'&&state.tracks.some(t=>t.compositionLayout||t.clips.some(c=>c.uiKind==='code'||c.compositionLayout)))throw Error('UI 片段与合成变换需要新版 Player，请更新并重启');
+    const size=CreatorCodeUI.dimensions(state.globalSettings.aspect,width,height);
+    for(const n of snapshot.composition.nodes){
+      if(n.kind!=='codeUI'||!n.codeUI)continue;
+      if(!window.codeUIAPI)throw Error('代码 UI 需要桌面工作台');
+      const args={code:n.codeUI,time:n.localTime,duration:n.duration,...size};
+      n.png=!exporting&&codePreview?await codePreview.render(args):await window.codeUIAPI.render({...args,purpose:exporting?'export':'preview'});
+      delete n.codeUI;delete n.localTime;delete n.duration;
+    }
+  }
   async function hostPost(endpoint, body) {
     if(endpoint==='state')await prepareCodeUI(body);if(endpoint==='export-frame'&&body.state)await prepareCodeUI(body.state);for(const row of body.frames||[])await prepareCodeUI(row.state);
     const response=await fetch('/'+location.pathname.split('/')[1]+'/'+endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1864,7 +1893,7 @@
     const normal=diagnostic?{}:CreatorExportQueue.normalOptions(state.compositionVersion,mode);let result=null;
     const fullSummary=diagnostic?.fullProject?CreatorExportQueue.createSummary():null;if(fullSummary)report.frameSummary=fullSummary.value;
     if(diagnostic?.queueCapacity||normal.gpuVideo)state=structuredClone(state);
-    exporting=true;showModal(`<div class="modal-head"><div><h2>正在导出视频</h2><p id="export-progress">正在准备…</p></div></div><div class="modal-body"><progress id="export-bar" max="1" value="0" style="width:100%"></progress><p class="hint">导出期间请保持工作台运行。</p><button id="export-cancel" class="top-button">取消导出</button></div>`);
+    codePreview?.interrupt();exporting=true;showModal(`<div class="modal-head"><div><h2>正在导出视频</h2><p id="export-progress">正在准备…</p></div></div><div class="modal-body"><progress id="export-bar" max="1" value="0" style="width:100%"></progress><p class="hint">导出期间请保持工作台运行。</p><button id="export-cancel" class="top-button">取消导出</button></div>`);
     $('#export-cancel').onclick=()=>{cancelled=true;$('#export-progress').textContent='正在取消…';if(encoding)hostPost('export-cancel',{queueSession}).catch(()=>{});};
     try {
       while(bridgeBusy||bridgePending)await new Promise(r=>setTimeout(r,20));
@@ -1874,6 +1903,7 @@
         for(let i=Math.max(0,diagnostic.startFrame-diagnostic.preRollFrames);i<diagnostic.startFrame;i++){
           if(cancelled)return;
           state.current=i/fps;const snapshot=playerSnapshot();if(!snapshot)throw Error('场景或相机不可用');
+          await prepareCodeUI(snapshot,width,height);
           await hostPost('state',{...snapshot,id:++bridgeId,profileExport:diagnostic.profile,frameIndex:i,runId:diagnostic.runId});
         }
         report.preRollMs=clock()-warmStart;

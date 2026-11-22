@@ -1,6 +1,6 @@
 'use strict';
 const {contextBridge, ipcRenderer, webUtils} = require('electron');
-contextBridge.exposeInMainWorld('codeUIAPI',Object.freeze({render:args=>ipcRenderer.invoke('code-ui:render',args)}));
+contextBridge.exposeInMainWorld('codeUIAPI',Object.freeze({render:args=>ipcRenderer.invoke('code-ui:render',args),warm:args=>ipcRenderer.invoke('code-ui:warm',args),interrupt:()=>ipcRenderer.send('code-ui:interrupt'),reset:()=>ipcRenderer.send('code-ui:reset')}));
 contextBridge.exposeInMainWorld('projectAPI', Object.freeze({
   open: () => ipcRenderer.invoke('project:open'),
   startup: () => ipcRenderer.invoke('project:startup'),
