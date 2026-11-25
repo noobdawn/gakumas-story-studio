@@ -110,30 +110,33 @@ internal sealed class HairBodyContact
     }
     internal void Invalidate(){Restore();revision=-1;lastTime=-1;foreach(var strand in strands)strand.shift=Vector3.zero;}
     public void Dispose(){foreach(var skin in skins)skin.Dispose();}
-    bool Hits(int group,Vector3 shift)
+    bool Hits(int group,Vector3 shift,bool includeHands)
     {
-        foreach(var mesh in skins)if(mesh.Crosses(group,body.obstacles,shift))return true;
+        foreach(var mesh in skins)
+            if(mesh.Crosses(group,body.obstacles,shift) || (includeHands && mesh.Crosses(group,body.hands,shift)))return true;
         return false;
     }
     readonly Vector3[] directions=new Vector3[32];
-    Vector3 Clearance(int id,float dt)
+    Vector3 Clearance(int id,float dt,bool includeHands,out bool resolved)
     {
+        resolved=true;
+        bool Blocked(Vector3 shift)=>Hits(id,shift,includeHands);
         var strand=strands[id];var prior=dt>0?strand.shift:Vector3.zero;float last=prior.magnitude;
-        bool rawHit=Hits(id,Vector3.zero);
+        bool rawHit=Blocked(Vector3.zero);
         if(!rawHit)
         {
             if(last<1e-5f)return Vector3.zero;
             var release=Vector3.MoveTowards(prior,Vector3.zero,dt*.40f);
-            if(!Hits(id,release))return release;
-            if(!Hits(id,prior))return prior;
+            if(!Blocked(release))return release;
+            if(!Blocked(prior))return prior;
         }
         if(last>.001f)
         {
             var reduced=Vector3.MoveTowards(prior,Vector3.zero,dt*.35f);
-            if(!Hits(id,reduced))return reduced;
-            if(!Hits(id,prior))return prior;
+            if(!Blocked(reduced))return reduced;
+            if(!Blocked(prior))return prior;
             var extended=prior.normalized*Mathf.Min(strand.maxOffset,last+.006f);
-            if(!Hits(id,extended))return extended;
+            if(!Blocked(extended))return extended;
         }
         var front=body.Forward*(strand.back?-1:1);var outward=body.Right*(strand.left?-1:1);
         var bend=body.BendNormal(strand.left);var up=Vector3.Cross(body.Forward,body.Right).normalized;
@@ -156,7 +159,7 @@ internal sealed class HairBodyContact
             for(float delta=.006f;delta<.126f;delta+=.008f)for(int i=0;i<count;i++)
             {
                 var candidate=Vector3.ClampMagnitude(prior+directions[i]*delta,strand.maxOffset);
-                if(!Hits(id,candidate))return candidate;
+                if(!Blocked(candidate))return candidate;
             }
         }
         const float step=.012f;
@@ -166,14 +169,15 @@ internal sealed class HairBodyContact
             for(int i=0;i<count;i++)
             {
                 var dir=directions[i];if(dir.sqrMagnitude<.5f || (i==1 && last<=.001f))continue;
-                if(Hits(id,dir*r))continue;
+                if(Blocked(dir*r))continue;
                 float low=Mathf.Max(0,r-step),high=r;
-                for(int j=0;j<3;j++){float mid=(low+high)*.5f;if(Hits(id,dir*mid))low=mid;else high=mid;}
+                for(int j=0;j<3;j++){float mid=(low+high)*.5f;if(Blocked(dir*mid))low=mid;else high=mid;}
                 var result=dir*Mathf.Min(r,high+.0015f);
-                if(dt>0 && last>.001f){var smooth=Vector3.MoveTowards(prior,result,dt*.7f);if(!Hits(id,smooth))return smooth;}
-                return Hits(id,result)?dir*r:result;
+                if(dt>0 && last>.001f){var smooth=Vector3.MoveTowards(prior,result,dt*.7f);if(!Blocked(smooth))return smooth;}
+                return Blocked(result)?dir*r:result;
             }
         }
+        resolved=false;
         return prior;
     }
     public void SetDisplay(bool enabled,int frame,double clock)
@@ -185,7 +189,12 @@ internal sealed class HairBodyContact
         bool continuous=lastTime>=0 && clock>lastTime && clock-lastTime<=.25;
         for(int i=0;i<strands.Length;i++)
         {
-            var strand=strands[i];strand.shift=Clearance(i,continuous?(float)(clock-lastTime):0);
+            var strand=strands[i];float dt=continuous?(float)(clock-lastTime):0;
+            var shift=Clearance(i,dt,true,out bool resolved);
+            // Fingers can enclose hair at its pinned root. If no displacement clears
+            // every finger, still keep the strand outside the sleeve and the body.
+            if(!resolved && Hits(i,shift,false))shift=Clearance(i,dt,false,out _);
+            strand.shift=shift;
             var move=body.space.TransformVector(strand.shift);
             foreach(var j in strand.joints){j.raw=j.bone.localPosition;if(j.increment>0)j.bone.position+=move*j.increment;j.displayed=j.bone.localPosition;}
         }

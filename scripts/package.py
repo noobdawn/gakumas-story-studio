@@ -25,7 +25,9 @@ def main():
     def ignore(directory,names):return [n for n in names if n in ['node_modules','tests','__pycache__'] or n.startswith('test_') or n.endswith('.pyc')]
     for folder in ['apps','services','resources/common','resources/voicevox','resources/editor-defaults','docs']:
         shutil.copytree(ROOT/folder,output/folder,ignore=ignore)
-    for folder,source in [('runtime/python',a.python),('runtime/tools',a.tools),('runtime/player',a.player)]:shutil.copytree(source,output/folder)
+    for folder,source in [('runtime/python',a.python),('runtime/tools',a.tools),('runtime/player',a.player)]:
+        exclude=shutil.ignore_patterns('*_DoNotShip') if folder=='runtime/player' else None
+        shutil.copytree(source,output/folder,ignore=exclude)
     app=output/'resources/app';app.mkdir(exist_ok=True)
     (app/'package.json').write_text(json.dumps({'name':'gakumas-story-studio','version':json.loads((ROOT/'apps/desktop/electron/package.json').read_text())['version'],'main':'../../apps/desktop/electron/main.js'}),'utf-8')
     for file in ['README.md','LICENSE','CONTRIBUTING.md','THIRD_PARTY_NOTICES.md','release-policy.json']:shutil.copy2(ROOT/file,output/file)

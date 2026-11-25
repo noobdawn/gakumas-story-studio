@@ -39,7 +39,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
     sealed class Link
     {
         public Segment left, right;
-        public float radius, smoothing, restLength;
+        public float radius, minimumSpacing, smoothing, restLength;
         public BodyCollider[] obstacles;
     }
     sealed class Anchor
@@ -311,8 +311,18 @@ public sealed class ActorClothPhysics : MonoBehaviour
                     {
                         if(layer.around)closed=true;else open=true;
                     }
-                    links.Add(new Link {left=left,right=right,radius=Mathf.Max(0,layer.radius),
-                        smoothing=Mathf.Clamp01(layer.smoothing),restLength=Vector3.Distance(root.InverseTransformPoint(left.child.position),root.InverseTransformPoint(right.child.position))});
+                    float restLength=Vector3.Distance(root.InverseTransformPoint(left.child.position),root.InverseTransformPoint(right.child.position));
+                    float radius=Mathf.Max(0,layer.radius);
+                    float minimumSpacing=Mathf.Max(2f*radius,left.childData.radiusA+right.childData.radiusA);
+                    // Closely layered hair can be narrower than the authored collision diameter.
+                    // Oversized links force the strands apart and lever their ends up at the shoulder.
+                    if(isHair)
+                    {
+                        radius=Mathf.Min(radius,restLength*.5f);
+                        minimumSpacing=Mathf.Min(minimumSpacing,restLength);
+                    }
+                    links.Add(new Link {left=left,right=right,radius=radius,minimumSpacing=minimumSpacing,
+                        smoothing=Mathf.Clamp01(layer.smoothing),restLength=restLength});
                 }
             }
             OpenGarment=open && !closed;
@@ -572,8 +582,7 @@ public sealed class ActorClothPhysics : MonoBehaviour
             var ab=b-a;float length=ab.magnitude;
             if(length<1e-6f)continue;
             float radius=link.radius*scale;
-            float minimum=Mathf.Max(2*radius,(left.childData.radiusA+right.childData.radiusA)*scale);
-            float gap=Mathf.Max(0,minimum-length);
+            float gap=Mathf.Max(0,link.minimumSpacing*scale-length);
             float change=gap>0 ? gap : (link.restLength*scale-length)*link.smoothing;
             var rightPush=ab*(.5f*change/length);var leftPush=-rightPush;
             foreach(var col in link.obstacles)

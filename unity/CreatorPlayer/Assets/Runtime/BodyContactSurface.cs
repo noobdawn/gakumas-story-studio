@@ -10,7 +10,7 @@ internal sealed class BodyContactSurface
     internal readonly Transform space;
     readonly Transform hips,neck,leftArm,rightArm;
     readonly Transform[] elbows,wrists;
-    internal readonly ContactMeshTree obstacles;
+    internal readonly ContactMeshTree obstacles,hands;
     readonly Sleeve[] sleeves;
     List<Vector3> posed;
     bool mapsReady;
@@ -57,12 +57,18 @@ internal sealed class BodyContactSurface
         int Island(int i){while(islands[i]!=i){islands[i]=islands[islands[i]];i=islands[i];}return i;}
         for(int i=0;i<triangles.Length;i+=3){int group=Island(triangles[i]);islands[Island(triangles[i+1])]=group;islands[Island(triangles[i+2])]=group;}
         var barrier=dominant.Select(n=>IsTorso(n) || n.Contains("Skirt") || n.Contains("Jacket") || n.Contains("Leg") || n.EndsWith("Foot") || n.Contains("ToeBase")).ToArray();
+        var hand=new bool[barrier.Length];
         for(int side=0;side<2;side++)
         {
             string prefix=side==0?"Left":"Right";
             var sw=weights.Select(w=>SleeveWeight(names,w,prefix)).ToArray();
             var arm=dominant.Select(n=>IsArm(n,prefix)).ToArray();
-            for(int i=0;i<arm.Length;i++)barrier[i]|=(arm[i] && (!dominant[i].Contains("Hand") || dominant[i]==prefix+"Hand_H")) || sw[i]>.1f;
+            for(int i=0;i<arm.Length;i++)
+            {
+                bool fingerOrPalm=arm[i] && dominant[i].Contains("Hand") && dominant[i]!=prefix+"Hand_H";
+                hand[i]|=fingerOrPalm;
+                barrier[i]|=(arm[i] && !fingerOrPalm) || sw[i]>.1f;
+            }
             Transform Find(string suffix)=>Array.Find(bones,b=>b && b.name==prefix+suffix);
             var shoulder=Find("Arm");var elbow=elbows[side]=Find("ForeArm");var wrist=wrists[side]=Find("Hand");
             if(!sw.Any(w=>w>.1f))continue;
@@ -81,6 +87,8 @@ internal sealed class BodyContactSurface
             sleeveList.Add(new Sleeve(space,shoulder,elbow,wrist,points,weights,sw,outer,edit,shellFaces,obstacle,bare));
         }
         sleeves=sleeveList.ToArray();obstacles=new ContactMeshTree(Select((a,b,c)=>Score(barrier[a],barrier[b],barrier[c])>=2),points);
+        bool Full(int i)=>barrier[i] || hand[i];
+        hands=new ContactMeshTree(Select((a,b,c)=>Score(Full(a),Full(b),Full(c))>=2 && Score(barrier[a],barrier[b],barrier[c])<2),points);
         UpdateBasis();
     }
     internal Vector3 Point(Transform joint)=>space.InverseTransformPoint(joint.position);
@@ -98,7 +106,7 @@ internal sealed class BodyContactSurface
     internal bool PrepareHair()
     {
         if(posed==null || Forward.sqrMagnitude<.5f)return false;
-        if(!mapsReady){obstacles.Refit(posed);mapsReady=true;}
+        if(!mapsReady){obstacles.Refit(posed);hands.Refit(posed);mapsReady=true;}
         return true;
     }
     internal Vector3 BendNormal(bool left)

@@ -44,7 +44,40 @@ public static class CreatorQuartzTests
             var pose=new ActorQuartzPose(hair,new Dictionary<string,Transform>{{strand.name,strand}},new[]{driver});
             head.localRotation=live;neck.localRotation=Quaternion.Euler(-14,20,9);
             pose.Apply();Check(strand.localRotation,new Quaternion(.09938285f,.03459241f,.06457788f,.99234879f));
+            CheckHairLinkClearance(Bone("Linked hair",root));
         }
         finally{UnityEngine.Object.DestroyImmediate(root.gameObject);}
+    }
+
+    static void CheckHairLinkClearance(Transform root)
+    {
+        Transform Node(string name,Transform parent,Vector3 offset)
+        {
+            var bone=new GameObject(name).transform;
+            bone.SetParent(parent,false);bone.localPosition=offset;
+            return bone;
+        }
+        var a=Node("LeftHair",root,new Vector3(-.01f,.1f,0));
+        var b=Node("RightHair",root,new Vector3(.01f,.1f,0));
+        var left=Node("LeftTip",a,Vector3.down*.1f);
+        var right=Node("RightTip",b,Vector3.down*.1f);
+        var obstacle=Node("Obstacle",root,Vector3.forward*.023f);
+        var bones=new List<ActorClothPhysics.BoneData>();
+        foreach(var bone in new[]{a,b,left,right})bones.Add(new ActorClothPhysics.BoneData{name=bone.name,radiusA=.004f,collisionMask=1});
+        var solver=root.gameObject.AddComponent<ActorClothPhysics>();
+        solver.includeOtherDynamic=true;solver.simulateInLateUpdate=false;
+        solver.Configure(root,new ActorClothPhysics.Data{
+            source="fixture_hair",dynamic=bones.ToArray(),
+            @static=new[]{new ActorClothPhysics.ColliderData{name=obstacle.name,radiusA=.003f,radiusB=.003f,collisionMask=1}}
+        },new ActorQuartzPose.Profile{drivers=Array.Empty<ActorQuartzPose.Driver>(),limits=Array.Empty<ActorQuartzPose.Limit>(),
+            layers=new[]{new ActorQuartzPose.Layer{bones=new[]{left.name,right.name},radius=.03f}}});
+        var restLeft=left.position;var restRight=right.position;
+        solver.ApplyCurrentPose();
+        if(solver.ChainLinks!=1 || Vector3.Distance(left.position,restLeft)>.0001f || Vector3.Distance(right.position,restRight)>.0001f)
+            throw new Exception("A narrow hair link distorted an unobstructed rest pose");
+        obstacle.localPosition=Vector3.forward*.004f;
+        solver.ApplyCurrentPose();
+        if(root.InverseTransformPoint(left.position).z>-.001f || root.InverseTransformPoint(right.position).z>-.001f)
+            throw new Exception("Hair link missed an obstacle between its two strands");
     }
 }
