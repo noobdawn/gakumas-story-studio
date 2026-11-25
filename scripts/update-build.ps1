@@ -1,4 +1,4 @@
-param([string]$Unity,[string]$Message='Update local build',[string]$Tools,[string]$PythonRuntime,[switch]$ReusePlayer,[switch]$StagedCheckpoint)
+param([string]$Unity,[string]$Message='Update local build',[string]$Tools,[string]$PythonRuntime,[switch]$ReusePlayer,[switch]$StagedCheckpoint,[scriptblock]$ValidateCandidate)
 $ErrorActionPreference='Stop'
 $repoRoot=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $build=Join-Path $repoRoot 'build'
@@ -54,8 +54,12 @@ try {
  & $checkPython (Join-Path $PSScriptRoot 'check.py');if($LASTEXITCODE){throw 'Source checks failed'}
  Push-Location $repoRoot
  try {node --test --test-concurrency=1 apps/desktop/electron/tests/*.test.js;if($LASTEXITCODE){throw 'Node checks failed'}} finally {Pop-Location}
- Push-Location (Join-Path $repoRoot 'services/host')
- try {& $checkPython -m unittest discover -v;if($LASTEXITCODE){throw 'Python checks failed'}} finally {Pop-Location}
+ # The portable interpreter also has the installed build on its import path.
+ Push-Location $repoRoot
+ try {
+  & $checkPython -B -X utf8 -c "import sys, unittest; from pathlib import Path; root = Path.cwd(); sys.path[:0] = [str(root / 'services' / name) for name in ('host', 'importer', 'voice')]; suite = unittest.defaultTestLoader.discover(str(root / 'services/host')); sys.exit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())"
+  if($LASTEXITCODE){throw 'Python checks failed'}
+ } finally {Pop-Location}
  $reportPath=Join-Path $stage 'report'
  New-Item -ItemType Directory -Path $reportPath -Force | Out-Null
  $electron=Join-Path $repoRoot 'apps/desktop/electron/node_modules/electron/dist/electron.exe'
@@ -75,6 +79,7 @@ try {
  & $checkPython (Join-Path $PSScriptRoot 'package.py') --python $PythonRuntime --tools $Tools --player $player --output $candidate --no-archive
  if($LASTEXITCODE){throw 'Package failed'}
  & $checkPython (Join-Path $PSScriptRoot 'verify-package.py') $candidate;if($LASTEXITCODE){throw 'Portable check failed'}
+ if($ValidateCandidate){& $ValidateCandidate $candidate}
  $checkpointArgs=@('--message',$Message)
  if($StagedCheckpoint){$checkpointArgs+='--staged'}
  & $checkPython (Join-Path $PSScriptRoot 'checkpoint.py') @checkpointArgs;if($LASTEXITCODE){throw 'Source checkpoint failed'}
