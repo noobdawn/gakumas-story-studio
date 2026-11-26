@@ -76,10 +76,14 @@ internal sealed class BodyContactSurface
             var armIslands=new HashSet<int>(Enumerable.Range(0,weights.Length).Where(i=>dominant[i]==prefix+"Arm").Select(Island));
             armIslands.IntersectWith(Enumerable.Range(0,weights.Length).Where(i=>dominant[i]==prefix+"ForeArm").Select(Island));
             var fore=dominant.Select(n=>n.StartsWith(prefix+"ForeArm",StringComparison.Ordinal) || n.StartsWith(prefix+"Hand",StringComparison.Ordinal)).ToArray();
-            bool Skin(int i)=>armIslands.Count==0?sw[i]<.01f:armIslands.Contains(Island(i));
-            var obstacle=Select((a,b,c)=>Score(fore[a],fore[b],fore[c])>=2 && Skin(a) && Skin(b) && Skin(c));
             var outer=Select((a,b,c)=>sw[a]+sw[b]+sw[c]>=1.35f);
             var edit=Select((a,b,c)=>sw[a]+sw[b]+sw[c]>.01f);
+            // A long sleeve can be skinned to the forearm too. Its editable triangles and
+            // their shared vertices cannot supply the fixed surface that pushes the cuff.
+            var sleeveVertex=new bool[weights.Length];
+            foreach(int i in edit)sleeveVertex[i]=true;
+            bool Skin(int i)=>!sleeveVertex[i] && (armIslands.Count==0?sw[i]<.01f:armIslands.Contains(Island(i)));
+            var obstacle=Select((a,b,c)=>Score(fore[a],fore[b],fore[c])>=2 && Skin(a) && Skin(b) && Skin(c));
             if(obstacle.Count==0 || outer.Count==0)continue;
             int shell=outer.GroupBy(Island).OrderByDescending(g=>g.Count()).First().Key;
             var shellFaces=Select((a,b,c)=>Island(a)==shell && sw[a]+sw[b]+sw[c]>.01f);
