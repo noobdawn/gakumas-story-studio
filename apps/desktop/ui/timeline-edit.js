@@ -89,6 +89,7 @@
       }else if(source.type==='audio'&&hover.clips.some(c=>!!c.dialogue!==!!clip.dialogue)){
         throw Error('对白配音与独立声音使用不同轨道');
       }else if(source.type==='animation'&&source.layerRole!==hover.layerRole){
+        if(clip.gaze)throw Error('视线片段只能放在角色动画叠加轨道');
         const motion=env.motion(clip.assetId);
         if(!motion)throw Error('当前动作素材不可用，无法更换动画层');
         if(hover.layerRole==='overlay')clip.blendMode=motion.isAdditive?'additive':'override';

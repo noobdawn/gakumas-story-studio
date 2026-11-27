@@ -89,6 +89,7 @@ function validate(doc) {
     if(t.locked!==undefined) requireValid(typeof t.locked==='boolean', '轨道锁定');
     for(const c of t.clips) {
       requireValid(obj(c)&&text(c.id)&&!clipIds.has(c.id)&&text(c.name)&&finite(c.start)&&finite(c.len)&&c.start>=0&&c.len>0&&c.start+c.len<=3600.001, '片段'); clipIds.add(c.id);
+      if(c.gaze!==undefined)requireValid(t.type==='animation'&&t.layerRole==='overlay'&&s.objects.some(o=>o.id===t.target&&o.type==='角色')&&require('../ui/gaze').valid(c.gaze),'视线片段');
       if(c.uiKind!==undefined)requireValid(t.type==='ui'&&(c.uiKind==='transition'&&text(c.assetId)||c.uiKind==='code')&&(c.targetSceneId===undefined||typeof c.targetSceneId==='string'&&c.targetSceneId.length<=160&&/^[a-zA-Z0-9_-]*$/.test(c.targetSceneId)),'UI 转场片段');
       if(c.uiKind==='code')require('../ui/code-ui').validate(c.codeUI);
       if(c.codeUISampling!==undefined){requireValid(c.uiKind==='code','代码 UI 取样方式');require('../ui/code-ui').validateSampling(c.codeUISampling);}

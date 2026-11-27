@@ -42,7 +42,7 @@ async function run(){
   await js(`step=2;show();$('#asset-settings-page>details').open=true;$('.setup-content').scrollTop=99999`);
   assert.ok(await js(`$('.setup-content').scrollTop>0`));
   // The editor shell uses the real markup, styles and docking script, with no backend app.
-  const html=fs.readFileSync(path.join(ui,'index.html'),'utf8').replace('<head>','<head><base href="'+pathToFileURL(ui+path.sep).href+'">').replace(/<script src="\.\/([^\"]+)"><\/script>/g,(full,name)=>['layout-schema.js','layout.js','task-progress.js','asset-settings.js','animation-layers.js','clip-sources.js','animation-layer-ui.js','character-colors.js','character-color-editor.js','settings-file-links.js','color-inputs.js'].includes(name)?full:'');
+  const html=fs.readFileSync(path.join(ui,'index.html'),'utf8').replace('<head>','<head><base href="'+pathToFileURL(ui+path.sep).href+'">').replace(/<script src="\.\/([^\"]+)"><\/script>/g,(full,name)=>['layout-schema.js','layout.js','task-progress.js','asset-settings.js','animation-layers.js','gaze.js','gaze-editor.js','clip-sources.js','animation-layer-ui.js','character-colors.js','character-color-editor.js','settings-file-links.js','color-inputs.js'].includes(name)?full:'');
   const fixture=path.join(temporary,'editor.html');fs.writeFileSync(fixture,html);await win.loadFile(fixture);
   for(const [w,h,dpr] of matrix){
     await metrics(w,h,dpr);

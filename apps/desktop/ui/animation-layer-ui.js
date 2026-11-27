@@ -33,11 +33,25 @@
    if(face)clip.playback='hold';track.clips.push(clip);e.selectClip(clip.id);if(settings.commit!==false){e.remember(before);e.render();}
    return {clips:[clip.id],length:len,skipped:face?face.channels.filter(c=>!e.supports(actor,c.shape)).length:0,trackId:track.id};
   }
+  function addGaze(actor,preferred,kind,start=e.state().current){
+   if(!actor||!e.actorSupported(actor)||preferred&&(preferred.locked||preferred.enabled===false))return e.notify('请选择可用角色并解锁动画轨道');
+   const state=e.state(),len=Math.min(2,e.duration()-start);
+   if(len<1/e.fps()-1e-6)return e.notify('演出剩余时长不足');
+   const before=structuredClone(state),tracks=state.tracks;
+   const track=trackFor(actor,'animation',start,len,preferred,true);
+   const active=tracks.find(t=>t!==track&&t.target===actor.id&&t.enabled!==false&&t.type==='animation'&&t.clips.some(c=>c.gaze&&start<c.start+c.len&&start+len>c.start));
+   if(active&&!before.tracks.some(t=>t.id===track.id)){
+    tracks.splice(tracks.indexOf(track),1);tracks.splice(tracks.indexOf(active),0,track);
+   }
+   const gaze=CreatorGaze.create(kind,e.gazePoint(actor,start),CreatorGazeEditor.seed());
+   const fade=Math.min(.2,len/2),clip={id:e.id(),name:CreatorGaze.name(gaze),gaze,start,len,weight:100,fadeIn:fade,fadeOut:fade};
+   track.clips.push(clip);e.selectClip(clip.id);e.remember(before);e.closeModal();e.render();e.revealClip(clip.id);
+  }
   function openClipPicker(actor,preferred,type='expression',newLayer=false){
    const body=type==='animation',subject=body?'动作':'表情';
    const kinds=body?{all:'全部动作',pose:'静态姿势',animation:'动画',overlay:'可叠加动作'}:{face:'完整表情',shape:'单项形变',effect:'贴花 / 特效'};
    const initial=e.state(),start=initial.current,initialFps=e.fps(),initialDuration=e.duration();
-   e.showModal(`<div class="modal-head"><div><h2>添加${subject}片段</h2><p>${esc(actor.name)} · 从 ${start.toFixed(2)} 秒开始</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">${newLayer?'选择素材后创建叠加层并插入片段。':'选择素材后插入时间轴。'}</p><div class="field"><label for="expression-picker-search">搜索${subject}</label><input id="expression-picker-search" class="input" placeholder="按名称或原始资源名搜索"><label for="expression-picker-kind">素材类型</label><select id="expression-picker-kind">${options(kinds,Object.keys(kinds)[0])}</select></div><div id="expression-picker-list" class="expression-picker-list" aria-label="可选${subject}"></div><p id="expression-picker-count" class="hint"></p><p id="expression-picker-error" class="error" role="alert"></p><button id="expression-picker-resident" class="add-component">查看角色常驻设置</button></div>`);
+   e.showModal(`<div class="modal-head"><div><h2>添加${subject}片段</h2><p>${esc(actor.name)} · 从 ${start.toFixed(2)} 秒开始</p></div><button data-close class="icon-button" aria-label="关闭">×</button></div><div class="modal-body"><p class="hint">${newLayer?'选择素材后创建叠加层并插入片段。':'选择素材后插入时间轴。'}</p><div class="field"><label for="expression-picker-search">搜索${subject}</label><input id="expression-picker-search" class="input" placeholder="按名称或原始资源名搜索"><label for="expression-picker-kind">素材类型</label><select id="expression-picker-kind">${options(kinds,Object.keys(kinds)[0])}</select></div>${body?'<button data-add-gaze="look" class="add-component">添加注视</button><button data-add-gaze="away" class="add-component">添加移开目光</button>':''}<div id="expression-picker-list" class="expression-picker-list" aria-label="可选${subject}"></div><p id="expression-picker-count" class="hint"></p><p id="expression-picker-error" class="error" role="alert"></p><button id="expression-picker-resident" class="add-component">查看角色常驻设置</button></div>`);
    const modal=$('#modal'),list=$('#expression-picker-list'),search=$('#expression-picker-search'),kind=$('#expression-picker-kind');let busy=false;
    function draw(){
     const terms=search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean),mode=kind.value;
@@ -47,6 +61,7 @@
     list.innerHTML=matches.slice(0,100).map(a=>`<button class="costume-picker-row" data-expression-pick="${esc(a.id)}"><span>${esc(e.name(a.id))}<small>${esc(a.source)}</small></span><small>${body?motionKind(e.motion(a.id)):e.face(a.id)?e.face(a.id).length<=1.01/e.fps()?'静态表情':e.face(a.id).length.toFixed(2)+' 秒':'权重控制'}</small></button>`).join('')||`<p class="hint">${candidates.length?'没有匹配的素材，请更换搜索词。':'此类型暂无可用素材，请检查资源缓存是否已准备。'}</p>`;
     $('#expression-picker-count').textContent=`匹配 ${matches.length} 项${matches.length>100?'，显示前 100 项，请继续搜索':''}`;
    }
+   modal.querySelectorAll('[data-add-gaze]').forEach(b=>b.onclick=()=>{if(!busy&&e.state()===initial)addGaze(actor,preferred,b.dataset.addGaze,start);});
    search.oninput=draw;kind.onchange=draw;
    $('#expression-picker-resident').onclick=()=>{if(busy)return;e.closeModal();e.manageResident(actor);};
    list.onclick=async event=>{
@@ -64,7 +79,7 @@
    draw();search.focus();
   }
   function residentMarkup(actor){
-   return `<div class="inspector-section resident-section"><div class="section-title">常驻叠加 <button id="resident-add" class="tool-button">＋ 添加</button></div><p class="hint">按列表顺序生效；时间轴表情临时覆盖相同通道，片段结束后恢复。注视尚未实现。</p><div class="resident-list">${(actor.residentLayers||[]).map((x,i)=>`<div class="resident-item ${x.enabled?'':'resident-muted'}"><label><input type="checkbox" data-resident-enable="${esc(x.id)}" ${x.enabled?'checked':''} ${x.kind==='gaze'?'disabled':''}><span><b>${esc(x.kind==='gaze'?'注视玩家（预留）':e.name(x.assetId))}</b><small>${labels[x.kind]} · ${x.kind==='gaze'?'未实现':x.weight+'%'+(x.kind==='animation'?' · '+scopes[x.scope]:'')}</small></span></label><div class="resident-actions"><button data-resident-edit="${esc(x.id)}">设置</button><button data-resident-move="${esc(x.id)}" data-step="-1" ${i?'':'disabled'} title="上移">↑</button><button data-resident-move="${esc(x.id)}" data-step="1" ${i<actor.residentLayers.length-1?'':'disabled'} title="下移">↓</button><button data-resident-remove="${esc(x.id)}" title="移除">×</button></div></div>`).join('')||'<p class="hint">尚无常驻叠加。</p>'}</div><label class="dialogue-link"><input id="inherit-body-face" type="checkbox" ${actor.inheritBodyFace?'checked':''}> 继承身体动作配套表情</label><p class="hint">配套表情作为底层，常驻表情与时间轴可继续覆盖；旧工程默认关闭。</p></div>`;
+   return `<div class="inspector-section resident-section"><div class="section-title">常驻叠加 <button id="resident-add" class="tool-button">＋ 添加</button></div><p class="hint">按列表顺序生效；时间轴表情临时覆盖相同通道，片段结束后恢复。定时注视可在动画轨道添加。</p><div class="resident-list">${(actor.residentLayers||[]).map((x,i)=>`<div class="resident-item ${x.enabled?'':'resident-muted'}"><label><input type="checkbox" data-resident-enable="${esc(x.id)}" ${x.enabled?'checked':''} ${x.kind==='gaze'?'disabled':''}><span><b>${esc(x.kind==='gaze'?'注视玩家（预留）':e.name(x.assetId))}</b><small>${labels[x.kind]} · ${x.kind==='gaze'?'未实现':x.weight+'%'+(x.kind==='animation'?' · '+scopes[x.scope]:'')}</small></span></label><div class="resident-actions"><button data-resident-edit="${esc(x.id)}">设置</button><button data-resident-move="${esc(x.id)}" data-step="-1" ${i?'':'disabled'} title="上移">↑</button><button data-resident-move="${esc(x.id)}" data-step="1" ${i<actor.residentLayers.length-1?'':'disabled'} title="下移">↓</button><button data-resident-remove="${esc(x.id)}" title="移除">×</button></div></div>`).join('')||'<p class="hint">尚无常驻叠加。</p>'}</div><label class="dialogue-link"><input id="inherit-body-face" type="checkbox" ${actor.inheritBodyFace?'checked':''}> 继承身体动作配套表情</label><p class="hint">配套表情作为底层，常驻表情与时间轴可继续覆盖；旧工程默认关闭。</p></div>`;
   }
   function bindResident(actor){
    $('#resident-add').onclick=()=>editResident(actor);
@@ -104,6 +119,7 @@
   }
   const motionKind=def=>def.isAdditive?'原生增量动画':def.isPose?'静态姿势':def.isLoop?'循环动画':'单次动画';
   function motionFields(track,clip){
+   if(clip.gaze)return '';
    if(track.type!=='animation')return '';
    const def=e.motion(clip.assetId),asset=e.assets().find(a=>a.id===clip.assetId)||def;
    return CreatorClipSources.card(esc,{
@@ -185,11 +201,13 @@
    if(expression)expression.onclick=()=>openExpressionReplacement(track,clip);
   }
   function clipFields(track,clip){
+   if(clip.gaze)return CreatorGazeEditor.fields(clip.gaze,e.picking(clip.id));
    if(track.type==='animation')return (track.layerRole==='overlay'?`<div class="layer-clip-fields"><div class="field"><label>叠加权重（%）</label><input id="layer-weight" class="input" type="number" min="0" max="100" value="${clip.weight??100}"></div>${bodyFields(clip,'layer')}</div>`:`<label class="dialogue-link"><input id="layer-loop" type="checkbox" ${clip.loop?'checked':''}> 在片段范围内循环</label><div class="field"><label for="layer-end">源动画结束后</label><select id="layer-end" ${clip.loop?'disabled':''}>${options({resident:'恢复常驻动画',hold:'保持末帧'},clip.layerPlayback?'hold':'resident')}</select></div>`);
    if(track.type==='expression'&&!clip.lipSyncSource&&e.face(clip.assetId))return `<div class="field"><label>表情播放方式</label><select id="layer-playback">${options({hold:'播放后保持末帧',loop:'在片段范围内循环'},clip.loop?'loop':clip.playback||'hold')}</select></div><p class="hint">整套面部曲线保存在一个片段中；说话口型只临时接管嘴部。</p>`;
    return '';
   }
   function bindClip(track,clip){
+   if(clip.gaze){CreatorGazeEditor.bind(track,clip,{change,render:e.render,notify:e.notify,pick:()=>e.pick(clip.id)});return;}
    const fields={weight:'weight',blend:'blendMode',scope:'scope',loop:'loop',playback:'playback',end:'layerPlayback'};
    for(const [key,field] of Object.entries(fields)){
     const input=$('#layer-'+key);if(!input)continue;
@@ -208,6 +226,6 @@
     };
    }
   }
-  return {residentMarkup,bindResident,motionFields,expressionFields,bindSources,clipFields,bindClip,addClip,openClipPicker};
+  return {residentMarkup,bindResident,motionFields,expressionFields,bindSources,clipFields,bindClip,addClip,addGaze,openClipPicker};
  };
 })(globalThis);

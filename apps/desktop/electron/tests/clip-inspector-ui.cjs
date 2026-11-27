@@ -233,6 +233,24 @@ module.exports=async function(win,ui,temp) {
   for(const id of ['face','motion'])clip(grouped,id).groupId='pair';
   await load(grouped,'face');await set('#batch-type','expression');await set('#batch-member','face');
   assert.equal(await js("q('.clip-motion-name').textContent"),'微笑');
+  await load(fixture,'motion');
+  const addGaze=async kind=>{
+    await click('[data-track-menu="track-motion"]');
+    await click('[data-track-gaze="'+kind+'"]');
+    return (await snapshot()).state.selectedClip;
+  };
+  const lookId=await addGaze('look');
+  await set('[data-gaze="target"]','point');await set('[data-gaze="point0"]','3.5');
+  await set('[data-gaze="preset"]','eyes');await click('#expression-key');
+  const awayId=await addGaze('away');
+  await click('#gaze-roll');await set('[data-gaze="style"]','sky');
+  const savedGaze=await snapshot();store.validate(savedGaze);
+  assert.equal(clip(savedGaze,lookId).gaze.point[0],3.5);
+  assert.equal(clip(savedGaze,lookId).gaze.head,0);
+  assert.equal(clip(savedGaze,lookId).propertyKeys.weight.length,1);
+  assert.equal(clip(savedGaze,awayId).name,'移开目光 · 抬眼望天');
+  assert.ok(savedGaze.state.tracks.findIndex(t=>t.clips.some(c=>c.id===awayId))<savedGaze.state.tracks.findIndex(t=>t.clips.some(c=>c.id===lookId)));
+  await load(savedGaze,awayId);assert.equal(await js("q('[data-gaze=style]').value"),'sky');
   const timelineMediaDrop=await require('./timeline-media-drop-ui.cjs')({win,fixture,load,js,snapshot});
   return {clipInspector:'passed',timelineMediaDrop};
 };

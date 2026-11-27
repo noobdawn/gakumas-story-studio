@@ -74,7 +74,7 @@ public sealed class ActorPhysicsPlayback
     public void Apply(bool enabled, Clock clock, string motion, float localTime, float duration,
                       CreatorMotionLayer[] layers, Transform root, ActorClothPhysics[] solvers,
                       Action<float, CreatorMotionLayer[]> sample, string placement = null, ActorPhysicsMode mode = ActorPhysicsMode.Quartz,
-                      BlendPose blend = default, Action<float,float> sampleBlend = null)
+                      BlendPose blend = default, Action<float,float> sampleBlend = null, CreatorGazePose gaze = null)
     {
         if(previousMode!=mode)
         {
@@ -94,6 +94,7 @@ public sealed class ActorPhysicsPlayback
         bool sameMoment = previousClock.seconds == clock.seconds;
         bool moved = position != root.position || rotation != root.rotation || scale != root.lossyScale;
         bool samePose = previousMotion == motion && previousBase == localTime && sameLayout && SameValues(previousLayers, layers) && previousBlend.Same(blend);
+        if(gaze!=null&&(gaze.Changed||(gaze.Active&&moved)))samePose=false;
         if (sameMoment && samePose && !moved) { previousPlacement=placement; return; }
 
         double elapsed=clock.seconds-previousClock.seconds;

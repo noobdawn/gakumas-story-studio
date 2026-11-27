@@ -54,7 +54,7 @@
    result.push({id:key,motionId:def.motionId,time:motionTime(def,local,item.loop===true),weight:clamp(weight/100),additive:mode==='additive',scope:item.scope||def.defaultScope||'full'});
   };
   for(const item of actor.residentLayers||[])if(item.kind==='animation'&&item.enabled!==false&&!(item.condition==='resident'&&env.hasBaseAction))push(item,'resident:'+item.id,time,item.weight);
-  for(const track of state.tracks.filter(t=>t.type==='animation'&&t.target===actor.id&&t.layerRole==='overlay'&&t.enabled!==false))for(const clip of track.clips)if(active(clip,time))push(clip,'clip:'+clip.id,time-clip.start+(clip.sourceOffset||0),(clip.weight??100)*fade(clip,time-clip.start));
+  for(const track of state.tracks.filter(t=>t.type==='animation'&&t.target===actor.id&&t.layerRole==='overlay'&&t.enabled!==false))for(const clip of track.clips)if(!clip.gaze&&active(clip,time))push(clip,'clip:'+clip.id,time-clip.start+(clip.sourceOffset||0),(clip.weight??100)*fade(clip,time-clip.start));
   if(result.length>32)throw Error('同一角色同时生效的身体叠加不能超过 32 层');
   return result;
  }

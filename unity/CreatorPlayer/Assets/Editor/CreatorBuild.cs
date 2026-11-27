@@ -19,6 +19,7 @@ public static class CreatorBuild {
   try {
    CreatorDedicatedEffectsTests.Run();
    CreatorMotionTransitionTests.Run();
+   CreatorGazeTests.Run();
    CreatorQuartzTests.Run();
    CreatorExportQueueTests.Run();
    if(PlayerSettings.colorSpace!=ColorSpace.Linear) throw new Exception("Expected Linear color space; refusing to change project setting");

@@ -64,7 +64,9 @@
         else if(keys.some(k=>k.time>len+1e-6))fail('“'+c.name+'”缩短后会丢失手工关键帧，请调整结束绑定或选择按比例调整关键帧');
       }
       if(scale){if(c.fadeIn!==undefined)c.fadeIn*=ratio;if(c.fadeOut!==undefined)c.fadeOut*=ratio;}
-      else if((c.fadeIn||0)+(c.fadeOut||0)>len+1e-6)fail('“'+c.name+'”缩短后容纳不下淡入淡出，请先调整');
+      else if(c.gaze&&(c.fadeIn||0)+(c.fadeOut||0)>len){
+        const factor=len/((c.fadeIn||0)+(c.fadeOut||0));c.fadeIn=(c.fadeIn||0)*factor;c.fadeOut=(c.fadeOut||0)*factor;
+      }else if((c.fadeIn||0)+(c.fadeOut||0)>len+1e-6)fail('“'+c.name+'”缩短后容纳不下淡入淡出，请先调整');
     }
     c.start=Math.max(0,start);c.len=len;
   }
