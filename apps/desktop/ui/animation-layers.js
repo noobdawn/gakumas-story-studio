@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.CreatorAnimationLayers=api;})(globalThis,function(){
+(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./lipsync'):root.CreatorLipSync);if(typeof module==='object'&&module.exports)module.exports=api;else root.CreatorAnimationLayers=api;})(globalThis,function(lipSync){
  'use strict';
  const scopes=['full','head','upperBody','lowerBody','leftArm','rightArm'];
  const kinds=['animation','expression','decal','gaze'];
@@ -82,10 +82,10 @@
    const local=time-clip.start,factor=fade(clip,local);
    if(clip.lipSyncSource){
     if(clip.lipVisemes)for(const [v,name] of Object.entries(clip.lipVisemes)){const keys=clip.propertyKeys?.['viseme_'+v];if(keys?.length)lips.push({name,weight:clamp(sampler(keys,local)/100)*factor});}
-    else {const shape=env.shape(clip.assetId);if(shape)lips.push({name:shape.source,weight:clamp((clip.propertyKeys?.weight?.length?sampler(clip.propertyKeys.weight,local):clip.weight??80)/100)*factor});}
+    else {const shape=env.shape(clip.assetId);if(shape)lips.push({name:shape.source,emotion:clip.lipMode==='emotion',weight:clamp((clip.propertyKeys?.weight?.length?sampler(clip.propertyKeys.weight,local):clip.weight??80)/100)*factor});}
    }else if(env.face(clip.assetId)||env.shape(clip.assetId))apply(clip,local+(clip.sourceOffset||0),factor);
   }
-  if(lips.length){for(const name of values.keys())if(name.startsWith('b_mouth.'))values.delete(name);for(const item of lips)values.set(item.name,item.weight);}
+  if(lips.length)lipSync.applyMouthLayers(values,lips);
   return [...values].map(([name,weight])=>({name,weight,...(times.has(name)?{time:times.get(name)}:{})}));
  }
  function matchesFilter(def,filter){if(filter==='all')return true;if(!def)return false;if(filter==='pose')return def.isPose===true;if(filter==='animation')return def.isPose===false;if(filter==='overlay')return def.overlayReady===true;return false;}

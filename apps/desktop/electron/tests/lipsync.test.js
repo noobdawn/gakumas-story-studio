@@ -55,3 +55,32 @@ test('拒绝过长片段和不合法音频输入', () => {
   assert.throws(()=>generate([new Float32Array(100),new Float32Array(99)],1000,0,1,30));
   assert.throws(()=>generate([new Float32Array(100)],1000,-1,1,30));
 });
+
+test('整句情绪口型在不同元音和句中停顿上保持同一开度，裁剪、静音和短句有界',()=>{
+ const L=require('../../ui/lipsync'),A=require('../../ui/animation-layers');
+ const settings={length:2,duration:2,fps:30,timing:{frameRate:100,frameCount:200,phonemes:[
+   {phoneme:'pau',startFrame:0,endFrame:20},{phoneme:'a',startFrame:20,endFrame:65},
+   {phoneme:'pau',startFrame:65,endFrame:105},{phoneme:'i',startFrame:105,endFrame:170},{phoneme:'pau',startFrame:170,endFrame:200}]}};
+ const keys=L.sentenceKeys(settings);
+ for(const t of [.4,.6,.8,1,1.2,1.44])assert.equal(A.sample(keys,t),32);
+ for(const t of [0,.19,1.71,2])assert.equal(A.sample(keys,t),0);
+ const shortened=L.sentenceKeys({...settings,offset:.25,length:1/30});assert.ok(shortened.every((k,i)=>!i||k.time>shortened[i-1].time));
+ assert.ok(L.sentenceKeys({...settings,offset:1.8,length:.2}).every(k=>k.value===0));
+ const pcm=new Float32Array(2000);pcm.fill(.2,200,500);pcm.fill(.5,1200,1600);
+ const wav={length:2,duration:2,channels:[pcm],sampleRate:1000,fps:24};
+ assert.equal(A.sample(L.sentenceKeys(wav),.85),32);
+ assert.ok(L.sentenceKeys({...wav,volume:0}).every(k=>k.value===0));
+ assert.ok(L.sentenceKeys({...wav,channels:[new Float32Array(2000)]}).every(k=>k.value===0));
+});
+test('整句口型轻叠在原有嘴角上，眉眼和脸部贴花仍逐帧生效',()=>{
+ const L=require('../../ui/lipsync'),A=require('../../ui/animation-layers');
+ const actor={id:'a'},lip={id:'speech',assetId:'open',start:0,len:2,weight:32,lipMode:'emotion',lipSyncSource:{}};
+ const expressions={smile:'b_mouth.mouth_007',open:'b_mouth.mouth_001',brow:'b_brow.brow_001',shadow:'decal.Shadow'};
+ const env={face:()=>null,shape:id=>({source:expressions[id]})};
+ const tracks=[lip,...['smile','brow','shadow'].map(assetId=>({assetId,start:0,len:4,weight:100}))].map(clip=>({target:'a',type:'expression',clips:[clip]}));
+ const weights=t=>Object.fromEntries(A.faceLayers({current:t,tracks},actor,env).map(x=>[x.name,x.weight]));
+ const mid=weights(1);assert.ok(mid[expressions.smile]>.85);assert.ok(mid[expressions.open]>0&&mid[expressions.open]<.15);
+ assert.equal(mid[expressions.brow],1);assert.equal(mid[expressions.shadow],1);
+ assert.equal(weights(2)[expressions.smile],1);assert.equal(weights(2)[expressions.open],undefined);
+ assert.equal(L.modeFor(), 'emotion');assert.equal(L.modeFor({lipVisemes:{}}),'phoneme');assert.equal(L.modeFor({}),'amplitude');
+});

@@ -185,7 +185,7 @@
      if(!e.state().objects.includes(actor)||track.target!==actor.id)throw Error('片段所属角色已改变');
      const face=e.face(a.id);
      if(face&&!face.channels?.some(c=>e.supports(actor,c.shape)))throw Error('角色没有可用的表情通道');
-     if((mouthOnly||!e.layered)&&e.state().tracks.some(t=>t.type==='expression'&&t.enabled!==false&&t.target===actor.id&&t.clips.some(c=>c!==clip&&c.assetId===a.id&&c.start<clip.start+clip.len-1e-6&&clip.start<c.start+c.len-1e-6)))throw Error('已有重叠的同名形变片段');
+     if(((mouthOnly&&clip.lipMode!=='emotion')||!e.layered)&&e.state().tracks.some(t=>t.type==='expression'&&t.enabled!==false&&t.target===actor.id&&t.clips.some(c=>c!==clip&&c.assetId===a.id&&c.start<clip.start+clip.len-1e-6&&clip.start<c.start+c.len-1e-6)))throw Error('已有重叠的同名形变片段');
      if(clip.weight===undefined)clip.weight=L.faceWeight(clip,e.face);
      clip.assetId=a.id;clip.sourceOffset=0;
      if(face)clip.playback=clip.loop?'loop':clip.playback||'hold';

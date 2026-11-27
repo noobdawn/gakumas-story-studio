@@ -35,6 +35,7 @@ function fixtureServices() {
   const transition = name=>({id:name,source:name,alias:'转场 '+name,renderer:'titan-ui-graph-v2',inDuration:.3,hold:.4,outDuration:.3});
   window.fetch = async (url,init) => {
     const endpoint=String(url).split('/').pop();
+    if(endpoint==='sound-a.wav'&&window.fixtureLipWav)return new Response(Uint8Array.from(atob(window.fixtureLipWav),c=>c.charCodeAt(0)));
     let data=[];
     if(endpoint==='face-motions')data=faces.map(({channels,...row})=>row);
     else if(endpoint.startsWith('asset-face-motion-')){
@@ -67,7 +68,7 @@ module.exports=async function(win,ui,temp) {
     .replace('<script src="./app.js"></script>',()=>'<script>('+fixtureServices.toString()+')()</script><script src="./app.js"></script>');
   fs.writeFileSync(filename,html);
   await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride',{width:1150,height:780,deviceScaleFactor:1,mobile:false});
-  await win.loadFile(filename,{query:{performance:'1',faces:'1',animationLayers:'1',faceDecals:'1',arrangement:'1',
+  await win.loadFile(filename,{query:{performance:'1',idle:'1',faces:'1',animationLayers:'1',faceDecals:'1',arrangement:'1',
     faceNames:['b_eye.eye_001','b_eye.eye_099','b_brow.brow_001',...'001 002 003 004 008 010 012'.split(' ').map(n=>'b_mouth.mouth_'+n)].join(','),
     missingShapes:'ttmr:b_eye.eye_099',assets:'1',motions:'idle,shy',scenes:'classroom,trainingroom',uiTransitions:'2',
     composition:'1',postEffects:'1',screenMedia:'1',gizmoTrs:'1',codeUI:'1',physics:'1',physicsModes:'1'}});
@@ -251,6 +252,26 @@ module.exports=async function(win,ui,temp) {
   assert.equal(clip(savedGaze,awayId).name,'移开目光 · 抬眼望天');
   assert.ok(savedGaze.state.tracks.findIndex(t=>t.clips.some(c=>c.id===awayId))<savedGaze.state.tracks.findIndex(t=>t.clips.some(c=>c.id===lookId)));
   await load(savedGaze,awayId);assert.equal(await js("q('[data-gaze=style]').value"),'sky');
+  // Exercise the same UI, decoder, project serialization and state packet used by the workbench.
+  const sentenceDoc=structuredClone(fixture);
+  sentenceDoc.state.tracks=sentenceDoc.state.tracks.filter(t=>!t.clips.some(c=>c.lipSyncSource));
+  sentenceDoc.state.tracks.push({type:'expression',target:'ttmr',id:'smile-mouth',name:'嘴角',clips:[
+    {id:'smile-mouth-clip',assetId:'asset-face-b_mouth.mouth_002',name:'微笑嘴角',start:5,len:3,weight:100}]});
+  sentenceDoc.state.current=6;
+  const wav=Buffer.alloc(44+16000*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
+  wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);
+  wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
+  for(let i=1600;i<14400;i++)if(i<5200||i>8800)wav.writeInt16LE(Math.round(8000*Math.sin(i*.2)),44+2*i);
+  await js('window.fixtureLipWav='+JSON.stringify(wav.toString('base64')));
+  await load(sentenceDoc,'speech');assert.equal(await js("q('#lip-mode').value"),'emotion');
+  await js("q('#generate-lipsync').onclick()");
+  const sentence=await snapshot();store.validate(sentence);
+  const generated=sentence.state.tracks.flatMap(t=>t.clips).find(c=>c.lipSyncSource);
+  assert.equal(generated.lipMode,'emotion');assert.ok(!generated.lipVisemes);
+  await load(sentence,generated.id);await js("command('preview.seek',{time:6})");
+  const mouth=await js("lastPacket.actorInstances[0].faceShapes.filter(s=>s.name.startsWith('b_mouth.'))");
+  assert.ok(mouth.some(s=>s.name==='b_mouth.mouth_002'&&s.weight>.85));
+  assert.ok(mouth.some(s=>s.name==='b_mouth.mouth_001'&&s.weight>0&&s.weight<.15));
   const timelineMediaDrop=await require('./timeline-media-drop-ui.cjs')({win,fixture,load,js,snapshot});
   return {clipInspector:'passed',timelineMediaDrop};
 };

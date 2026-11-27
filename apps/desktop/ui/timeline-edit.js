@@ -42,7 +42,7 @@
   function checkPlacement(s,items,ignored,duration){
     const all=rows(s);unlocked(items);
     for(const {track,clip} of items){if(!track||clip.start< -1e-6||clip.len<=0||clip.start+clip.len>duration+1e-6)throw Error('整体编辑超出演出时长');
-      if(all.some(r=>!ignored.has(r.clip.id)&&overlaps(clip,r.clip)&&(r.track.id===track.id||clip.lipSyncSource&&r.track.enabled!==false&&r.track.type==='expression'&&r.track.target===track.target&&r.clip.assetId===clip.assetId)))throw Error('目标位置与已有片段重叠');
+      if(all.some(r=>!ignored.has(r.clip.id)&&overlaps(clip,r.clip)&&(r.track.id===track.id||clip.lipSyncSource&&r.track.enabled!==false&&r.track.type==='expression'&&r.track.target===track.target&&(clip.lipMode==='emotion'?r.clip.lipSyncSource:r.clip.assetId===clip.assetId))))throw Error('目标位置与已有片段重叠');
     }
   }
   function validLips(s,env){const all=rows(s);return new Set(all.filter(({clip:c})=>{if(!c.lipSyncSource)return false;const a=all.find(r=>r.clip.id===c.lipSyncSource.audioClipId),d=a&&s.dialogues.find(d=>d.id===a.clip.dialogue);return a&&d&&c.start===a.clip.start&&c.len===a.clip.len&&c.lipSyncSource.signature===env.signature(a.track,a.clip,d);}).map(r=>r.clip.id));}

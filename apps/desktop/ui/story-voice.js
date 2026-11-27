@@ -26,19 +26,23 @@
         if(lips.length>1)throw Error('对白有多个口型片段，请先整理');
         const old=lips[0];if(old&&(old.track.locked||old.clip.lipMode==='manual'||old.clip.lipEdited))throw Error('已有手工调整或锁定的口型，请先保留为独立动画或删除后重试');
         if(old||actor&&env.supported(actor)){
-          if(length>60)throw Error('自动口型单句限 60 秒，请缩短台词或先移除口型');
-          const mode=old?.clip.lipMode||(!old&&asset.voiceTiming?'phoneme':'amplitude');
-          if(mode==='phoneme'&&!asset.voiceTiming)throw Error('新音频缺少音素时间，请先将口型模式改为音量张合');
-          let visemes=old?.clip.lipVisemes||{a:'b_mouth.mouth_003',i:'b_mouth.mouth_004',u:'b_mouth.mouth_010',e:'b_mouth.mouth_012',o:'b_mouth.mouth_008'};
-          // New tracks can use the amplitude shape when a character lacks a full vowel set.
-          let use=mode;if(!old&&use==='phoneme'&&Object.values(visemes).some(n=>!env.shape(actor,n)))use='amplitude';
+          const use=L.modeFor(old?.clip);
+          if(use!=='emotion'&&length>60)throw Error('音量及五元音口型单句限 60 秒');
+          if(use==='phoneme'&&!asset.voiceTiming)throw Error('新音频缺少音素时间，请先将口型切换到整句或音量模式');
           if(use==='phoneme'&&Math.abs(audio.duration-asset.voiceTiming.frameCount/asset.voiceTiming.frameRate)>.05)throw Error('新语音与音素时间不一致');
           const fades=[Math.min(a.clip.fadeIn||0,length),Math.min(a.clip.fadeOut||0,length)],volume=a.clip.volume??1,fps=next.globalSettings.fps;
-          const propertyKeys=use==='phoneme'?L.phonemeKeys(asset.voiceTiming,0,length,fps,volume,...fades):{weight:L.generate(Array.from({length:audio.numberOfChannels},(_,i)=>audio.getChannelData(i)),audio.sampleRate,0,length,fps,volume,...fades)};
+          let propertyKeys;
+          if(use==='phoneme')propertyKeys=L.phonemeKeys(asset.voiceTiming,0,length,fps,volume,...fades);
+          else {
+            const channels=Array.from({length:audio.numberOfChannels},(_,i)=>audio.getChannelData(i));
+            const weight=use==='emotion'?L.sentenceKeys({timing:asset.voiceTiming,channels,sampleRate:audio.sampleRate,duration:audio.duration,length,fps,volume,fadeIn:fades[0],fadeOut:fades[1]}):
+              L.generate(channels,audio.sampleRate,0,length,fps,volume,...fades);
+            propertyKeys={weight};
+          }
           const payload={assetId:'asset-local-mouth',len:length,start:a.clip.start,weight:0,lipMode:use,lipEdited:false,lipGeneration:env.id(),lipSyncSource:{audioClipId:a.clip.id,signature:'pending'},propertyKeys};
-          if(use==='phoneme')payload.lipVisemes=structuredClone(visemes);
-          if(old){Object.assign(old.clip,payload);if(use==='amplitude')delete old.clip.lipVisemes;}
-          else{actor.components=[...new Set([...actor.components,'expression'])];next.tracks.push({id:env.id(),name:actor.name+' · 自动口型',type:'expression',target:actor.id,clips:[{id:env.id(),name:use==='phoneme'?'对白口型（音素实验）':'对白口型（音量近似）',...payload}]});}
+          if(use==='phoneme')payload.lipVisemes=structuredClone(old.clip.lipVisemes);
+          if(old){Object.assign(old.clip,payload);if(use!=='phoneme')delete old.clip.lipVisemes;}
+          else{actor.components=[...new Set([...actor.components,'expression'])];next.tracks.push({id:env.id(),name:actor.name+' · 自动口型',type:'expression',target:actor.id,clips:[{id:env.id(),name:'对白口型（整句情绪）',...payload}]});}
         }
         // Audio fades remain bounded; original source files and voice speed stay unchanged.
         for(const key of ['fadeIn','fadeOut'])if(a.clip[key]!==undefined)a.clip[key]=Math.min(a.clip[key],length/2);

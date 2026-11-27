@@ -98,7 +98,7 @@
       fail('排时冲突：“'+a.name+'”与“'+b.name+'”在轨道“'+t.name+'”重叠，请调整绑定或固定时间片段');
     }}
     // Manual mouth animation must not be silently overridden by a newly timed lip track.
-    for(const a of all.filter(r=>r.clip.lipSyncSource&&changed.has(r.clip.id)))for(const b of all)if(b.clip!==a.clip&&b.track.type==='expression'&&b.track.target===a.track.target&&b.track.enabled!==false&&a.track.enabled!==false&&b.clip.assetId===a.clip.assetId&&overlap(a.clip,b.clip)){
+    for(const a of all.filter(r=>r.clip.lipSyncSource&&changed.has(r.clip.id)))for(const b of all)if(b.clip!==a.clip&&b.track.type==='expression'&&b.track.target===a.track.target&&b.track.enabled!==false&&a.track.enabled!==false&&(a.clip.lipMode==='emotion'?b.clip.lipSyncSource:b.clip.assetId===a.clip.assetId)&&overlap(a.clip,b.clip)){
       const pa=old.get(a.clip.id)?.clip,pb=old.get(b.clip.id)?.clip;if(pa&&pb&&overlap(pa,pb)&&near(a.clip.start-pa.start,b.clip.start-pb.start)&&near(a.clip.len,pa.len)&&near(b.clip.len,pb.len))continue;
       fail('“'+a.clip.name+'”与另一嘴部动画重叠，请先整理口型轨道');
     }
