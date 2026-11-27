@@ -1,5 +1,13 @@
 # 模块与运行数据
 
+## 角色视线与对白口型
+
+视线片段位于角色动画叠加轨。`clip.gaze.kind` 的 `look` 选择当前拍摄相机或世界坐标点，`away` 按角色自身朝向计算偏转。低头游移将落点种子保存在片段中，由片内时间和源偏移求出当前方向，因此回拖或分割后仍可复现同一帧。工作台把各层的目标、强度和部位参与度传给 Player，Player 采样身体动作后应用视线，再更新物理。[轨道求值](../../apps/desktop/ui/gaze.js) · [重叠、切镜与分割测试](../../apps/desktop/electron/tests/gaze.test.js)
+
+对白口型位于角色表情轨，通过 `lipSyncSource.audioClipId` 关联对白音频。新生成的情绪口型使用 `lipMode: "emotion"` 和 `lipCycleOffset`。权重关键帧控制发声参与度，片内时间加上该偏移决定开合相位。旧情绪片段缺少 `lipCycleOffset` 时，仍按原有权重混合。重新生成该句口型时，工作台写入偏移并启用循环。[口型求值](../../apps/desktop/ui/lipsync.js) · [生成、停顿与兼容测试](../../apps/desktop/electron/tests/lipsync.test.js)
+
+本机游戏的 `VLActorTalkData` 中实测有 25 条配置、48 条曲线。曲线时长约为 0.37 秒，覆盖笑脸、怯弱等动态嘴形，也包含亲吻等固定姿势。宿主按受管理批次读取并缓存这些曲线。创作器用 WAV 发声区间决定何时混入当前表情对应的曲线，音频门限和混合强度是创作器的实现。原游戏逐句使用的播放倍率和门限仍待验证。[当批次嘴形曲线提取](../../services/host/talk_curve_cache.py)
+
 ## 片段属性与离屏拍摄缓存
 
 工程的片段覆盖存于 `compositionLayout`，拍摄片段按字段继承 `world` 轨布局。`masks` 是片段本地坐标下最多八个几何蒙版。Player 在图层变换前按交集处理透明度，接缝分别处理两侧片段。`muted` 单独保存。第一次主动改倍率时记录 `rateSourceLength`，往返变速可保留源区间，随后裁剪会按新的占位重算。旧工程按已保存的时长载入。
