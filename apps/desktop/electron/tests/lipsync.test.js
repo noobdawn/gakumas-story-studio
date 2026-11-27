@@ -56,19 +56,20 @@ test('拒绝过长片段和不合法音频输入', () => {
   assert.throws(()=>generate([new Float32Array(100)],1000,-1,1,30));
 });
 
-test('整句情绪口型在不同元音和句中停顿上保持同一开度，裁剪、静音和短句有界',()=>{
+test('情绪口型在连续发声时启用，停顿时收回，裁剪、静音和短句有界',()=>{
  const L=require('../../ui/lipsync'),A=require('../../ui/animation-layers');
  const settings={length:2,duration:2,fps:30,timing:{frameRate:100,frameCount:200,phonemes:[
    {phoneme:'pau',startFrame:0,endFrame:20},{phoneme:'a',startFrame:20,endFrame:65},
    {phoneme:'pau',startFrame:65,endFrame:105},{phoneme:'i',startFrame:105,endFrame:170},{phoneme:'pau',startFrame:170,endFrame:200}]}};
  const keys=L.sentenceKeys(settings);
- for(const t of [.4,.6,.8,1,1.2,1.44])assert.equal(A.sample(keys,t),32);
- for(const t of [0,.19,1.71,2])assert.equal(A.sample(keys,t),0);
+ for(const t of [.4,1.2,1.44])assert.ok(A.sample(keys,t)>74);
+ for(const t of [0,.19,.8,1,1.71,2])assert.equal(A.sample(keys,t),0);
  const shortened=L.sentenceKeys({...settings,offset:.25,length:1/30});assert.ok(shortened.every((k,i)=>!i||k.time>shortened[i-1].time));
  assert.ok(L.sentenceKeys({...settings,offset:1.8,length:.2}).every(k=>k.value===0));
  const pcm=new Float32Array(2000);pcm.fill(.2,200,500);pcm.fill(.5,1200,1600);
  const wav={length:2,duration:2,channels:[pcm],sampleRate:1000,fps:24};
- assert.equal(A.sample(L.sentenceKeys(wav),.85),32);
+ assert.equal(A.sample(L.sentenceKeys(wav),.85),0);
+ assert.ok(A.sample(L.sentenceKeys(wav),.33)>70);
  assert.ok(L.sentenceKeys({...wav,volume:0}).every(k=>k.value===0));
  assert.ok(L.sentenceKeys({...wav,channels:[new Float32Array(2000)]}).every(k=>k.value===0));
 });
@@ -83,4 +84,18 @@ test('整句口型轻叠在原有嘴角上，眉眼和脸部贴花仍逐帧生�
  assert.equal(mid[expressions.brow],1);assert.equal(mid[expressions.shadow],1);
  assert.equal(weights(2)[expressions.smile],1);assert.equal(weights(2)[expressions.open],undefined);
  assert.equal(L.modeFor(), 'emotion');assert.equal(L.modeFor({lipVisemes:{}}),'phoneme');assert.equal(L.modeFor({}),'amplitude');
+});
+
+test('持续发声时循环采样表情专用曲线，拖动和分割后仍取同一帧',()=>{
+  const L=require('../../ui/lipsync');
+  const smile='b_mouth.mouth_002',open='b_mouth.mouth_003',brow='b_brow.brow_001';
+  const keys=values=>values.map((v,i)=>[i*.25,v,0,0]);
+  const profiles=[{trigger:smile,weight:1,curves:[{shape:smile,keys:keys([100,0,100])},{shape:open,keys:keys([0,100,0])}]}];
+  const sample=(time,offset=0,gain=.75)=>Object.fromEntries(L.combineFaceLayers([
+    {name:smile,weight:1},{name:brow,weight:.8},{name:'b_mouth.mouth_001',weight:gain,emotion:true,cycleTime:time+offset}
+  ],profiles).map(x=>[x.name,x.weight]));
+  assert.equal(sample(.25)[open],.75);assert.equal(sample(.5)[open],0);
+  assert.equal(sample(.75)[open],.75);assert.equal(sample(.625)[open],.375);
+  assert.deepEqual(sample(.75),sample(.25,.5));assert.equal(sample(.25)[brow],.8);
+  assert.deepEqual(sample(.25,0,0),{[smile]:1,[brow]:.8});
 });

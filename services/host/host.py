@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -260,6 +261,13 @@ def main():
             except (OSError, ValueError, KeyError) as exc:
                 parser.error('缓存叠加动作准备失败：' + str(exc))
         film_motions = load_film_motions(film_root)
+    talk_profiles = []
+    if multi_faces:
+        from talk_curve_cache import prepare as prepare_talk_curves
+        try:
+            talk_profiles = prepare_talk_curves(film_root)
+        except (OSError, ValueError, KeyError, struct.error) as exc:
+            parser.error('说话嘴形缓存准备失败，请在资产设置检查当前批次：' + str(exc))
     full_face_root=effect_root/'face-animation'
     face_motion_catalog=full_face_root/'catalog.json'
     decal_curve_root=full_face_root/'decal-curves'
@@ -439,8 +447,9 @@ def main():
                         except (OSError,ValueError,TypeError) as e:
                             return self.send_error(500,'Costume catalog unavailable',explain=str(e))
                         self.send_response(200);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
-                    if self.path == '/' + token + '/face-motions':
-                        data=json.dumps(face_motions,ensure_ascii=False).encode('utf-8')
+                    if self.path in ('/' + token + '/face-motions', '/' + token + '/talk-curves'):
+                        rows = talk_profiles if self.path.endswith('/talk-curves') else face_motions
+                        data=json.dumps(rows,ensure_ascii=False).encode('utf-8')
                         self.send_response(200);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
                     face_prefix = '/' + token + '/face-motion/'
                     if self.path.startswith(face_prefix):

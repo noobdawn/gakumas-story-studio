@@ -28,7 +28,7 @@
         if(old||actor&&env.supported(actor)){
           const use=L.modeFor(old?.clip);
           if(use!=='emotion'&&length>60)throw Error('音量及五元音口型单句限 60 秒');
-          if(use==='phoneme'&&!asset.voiceTiming)throw Error('新音频缺少音素时间，请先将口型切换到整句或音量模式');
+          if(use==='phoneme'&&!asset.voiceTiming)throw Error('新音频缺少音素时间，请先将口型切换到情绪口型或音量模式');
           if(use==='phoneme'&&Math.abs(audio.duration-asset.voiceTiming.frameCount/asset.voiceTiming.frameRate)>.05)throw Error('新语音与音素时间不一致');
           const fades=[Math.min(a.clip.fadeIn||0,length),Math.min(a.clip.fadeOut||0,length)],volume=a.clip.volume??1,fps=next.globalSettings.fps;
           let propertyKeys;
@@ -39,10 +39,10 @@
               L.generate(channels,audio.sampleRate,0,length,fps,volume,...fades);
             propertyKeys={weight};
           }
-          const payload={assetId:'asset-local-mouth',len:length,start:a.clip.start,weight:0,lipMode:use,lipEdited:false,lipGeneration:env.id(),lipSyncSource:{audioClipId:a.clip.id,signature:'pending'},propertyKeys};
+          const payload={assetId:'asset-local-mouth',len:length,start:a.clip.start,weight:0,lipMode:use,lipCycleOffset:use==='emotion'?0:undefined,lipEdited:false,lipGeneration:env.id(),lipSyncSource:{audioClipId:a.clip.id,signature:'pending'},propertyKeys};
           if(use==='phoneme')payload.lipVisemes=structuredClone(old.clip.lipVisemes);
           if(old){Object.assign(old.clip,payload);if(use!=='phoneme')delete old.clip.lipVisemes;}
-          else{actor.components=[...new Set([...actor.components,'expression'])];next.tracks.push({id:env.id(),name:actor.name+' · 自动口型',type:'expression',target:actor.id,clips:[{id:env.id(),name:'对白口型（整句情绪）',...payload}]});}
+          else{actor.components=[...new Set([...actor.components,'expression'])];next.tracks.push({id:env.id(),name:actor.name+' · 自动口型',type:'expression',target:actor.id,clips:[{id:env.id(),name:'对白口型（缓慢开合）',...payload}]});}
         }
         // Audio fades remain bounded; original source files and voice speed stay unchanged.
         for(const key of ['fadeIn','fadeOut'])if(a.clip[key]!==undefined)a.clip[key]=Math.min(a.clip[key],length/2);

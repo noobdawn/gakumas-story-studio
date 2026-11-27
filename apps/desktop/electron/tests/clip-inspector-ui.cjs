@@ -38,6 +38,9 @@ function fixtureServices() {
     if(endpoint==='sound-a.wav'&&window.fixtureLipWav)return new Response(Uint8Array.from(atob(window.fixtureLipWav),c=>c.charCodeAt(0)));
     let data=[];
     if(endpoint==='face-motions')data=faces.map(({channels,...row})=>row);
+    else if(endpoint==='talk-curves')data=[{trigger:'b_mouth.mouth_002',weight:1,curves:[
+      {shape:'b_mouth.mouth_002',keys:[[0,100,0,0],[.15,0,0,0],[.3,100,0,0]]},
+      {shape:'b_mouth.mouth_003',keys:[[0,0,0,0],[.15,100,0,0],[.3,0,0,0]]}]}];
     else if(endpoint.startsWith('asset-face-motion-')){
       if(endpoint.includes('pending'))await new Promise(resolve=>window.finishFaceRead=resolve);
       data=faces.find(a=>a.id===endpoint);
@@ -268,10 +271,17 @@ module.exports=async function(win,ui,temp) {
   const sentence=await snapshot();store.validate(sentence);
   const generated=sentence.state.tracks.flatMap(t=>t.clips).find(c=>c.lipSyncSource);
   assert.equal(generated.lipMode,'emotion');assert.ok(!generated.lipVisemes);
-  await load(sentence,generated.id);await js("command('preview.seek',{time:6})");
-  const mouth=await js("lastPacket.actorInstances[0].faceShapes.filter(s=>s.name.startsWith('b_mouth.'))");
-  assert.ok(mouth.some(s=>s.name==='b_mouth.mouth_002'&&s.weight>.85));
-  assert.ok(mouth.some(s=>s.name==='b_mouth.mouth_001'&&s.weight>0&&s.weight<.15));
+  assert.equal(generated.lipCycleOffset,0);
+  await load(sentence,generated.id);
+  async function mouthAt(time){
+    await js("command('preview.seek',{time:"+time+"})");
+    return js("Object.fromEntries(lastPacket.actorInstances[0].faceShapes.map(s=>[s.name,s.weight]))");
+  }
+  const open=await mouthAt(5.45),closed=await mouthAt(5.3),pause=await mouthAt(6);
+  assert.ok(open['b_mouth.mouth_003']>.65&&open['b_mouth.mouth_002']<.35);
+  assert.ok((closed['b_mouth.mouth_003']||0)<.01);
+  assert.equal(pause['b_mouth.mouth_002'],1);
+  assert.equal(pause['b_mouth.mouth_003']||0,0);
   const timelineMediaDrop=await require('./timeline-media-drop-ui.cjs')({win,fixture,load,js,snapshot});
   return {clipInspector:'passed',timelineMediaDrop};
 };

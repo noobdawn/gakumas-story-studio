@@ -37,49 +37,98 @@
     keys.push({time:length,value:0});
     return keys;
   }
-  const labels={emotion:'情绪口型（整句）',amplitude:'音量张合',phoneme:'日语五元音',manual:'手工五元音'};
+  const labels={emotion:'情绪口型（缓慢开合）',amplitude:'音量张合',phoneme:'日语五元音',manual:'手工五元音'};
   function modeFor(clip){return clip?(clip.lipMode||(clip.lipVisemes?'phoneme':'amplitude')):'emotion';}
 
-  // Find only the first and last spoken samples. Interior pauses never trigger another mouth change.
+  // Keys describe participation in speech. The mouth cycle is evaluated at the
+  // playhead so a sustained voice keeps moving without baking per-frame keys.
   function sentenceKeys({timing,channels,sampleRate,duration,length,fps,offset=0,volume=1,fadeIn=0,fadeOut=0}){
     if(!Number.isFinite(length)||length<=0||length>3600||!Number.isFinite(duration)||duration<=0||
-       !Number.isFinite(offset)||offset<0||![24,25,30,60].includes(fps)||!Number.isFinite(volume)||volume<0||volume>1)
-      throw Error('整句口型参数无效');
-    const silent=[{time:0,value:0},{time:length,value:0}];
-    let first=0,last=Math.min(length,duration-offset);
-    if(last<=0||volume===0)return silent;
-    if(timing?.frameRate>0&&Array.isArray(timing.phonemes)&&Math.abs(duration-timing.frameCount/timing.frameRate)<=.05){
-      const voiced=timing.phonemes.filter(p=>!/^(pau|sil[be]?|sp)$/i.test(p.phoneme)&&p.endFrame/timing.frameRate>offset&&p.startFrame/timing.frameRate<offset+last);
-      if(!voiced.length)return silent;
-      first=Math.max(0,voiced[0].startFrame/timing.frameRate-offset);
-      last=Math.min(last,voiced[voiced.length-1].endFrame/timing.frameRate-offset);
-    }else if(channels){
-      const block=Math.max(1,Math.round(sampleRate*.02)),start=Math.floor(offset*sampleRate),end=Math.min(channels[0].length,Math.ceil((offset+last)*sampleRate));
-      let onset=-1,release=0;
-      for(let i=start;i<end;i+=block){
-        const stop=Math.min(i+block,end);let energy=0;
+       !Number.isFinite(offset)||offset<0||![24,25,30,60].includes(fps)||!Number.isFinite(volume)||volume<0||volume>1||
+       !Number.isFinite(fadeIn)||fadeIn<0||!Number.isFinite(fadeOut)||fadeOut<0)
+      throw Error('情绪口型参数无效');
+    const end=Math.min(length,duration-offset),spans=[],keys=[{time:0,value:0}];
+    // Bridge consonants and brief gaps. Bound key counts on hour-long clips.
+    const bridge=Math.max(.12,length/1800);
+    function voice(start,stop){
+      start=Math.max(0,start);stop=Math.min(end,stop);
+      if(stop<=start)return;
+      const last=spans[spans.length-1];
+      if(last&&start-last.stop<=bridge)last.stop=Math.max(last.stop,stop);
+      else spans.push({start,stop});
+    }
+    if(channels&&end>0&&volume>0){
+      if(!channels.length||!Number.isFinite(sampleRate)||sampleRate<=0||
+         channels.some(c=>!c||c.length!==channels[0].length))throw Error('语音采样无效');
+      const first=Math.floor(offset*sampleRate),last=Math.min(channels[0].length,Math.ceil((offset+end)*sampleRate));
+      const block=Math.max(1,Math.round(sampleRate*.02)),levels=[];
+      let peak=0;
+      for(let i=first;i<last;i+=block){
+        const stop=Math.min(i+block,last);let energy=0;
         for(const channel of channels)for(let k=i;k<stop;k++)energy+=channel[k]*channel[k];
-        if(energy>(stop-i)*channels.length*.003**2){if(onset<0)onset=i;release=stop;}
+        const rms=Math.sqrt(energy/((stop-i)*channels.length));
+        levels.push(rms);peak=Math.max(peak,rms);
       }
-      if(onset<0)return silent;
-      first=Math.max(0,onset/sampleRate-offset);last=Math.min(last,release/sampleRate-offset);
-    }
-    const span=last-first;
-    if(span<=0)return silent;
-    const attack=Math.min(span*.42,Math.max(.16,fadeIn-first)),release=Math.min(span*.44,Math.max(.20,fadeOut-(length-last)));
-    const peak=32*volume,keys=[{time:0,value:0}];
+      const gate=Math.max(.003,peak*.045);
+      levels.forEach((level,i)=>{
+        if(level>gate)voice((first+i*block)/sampleRate-offset,Math.min(first+(i+1)*block,last)/sampleRate-offset);
+      });
+    }else if(timing?.frameRate>0&&Array.isArray(timing.phonemes)&&Math.abs(duration-timing.frameCount/timing.frameRate)<=.05){
+      for(const p of timing.phonemes)if(!/^(pau|sil[be]?|sp)$/i.test(p.phoneme))
+        voice(p.startFrame/timing.frameRate-offset,p.endFrame/timing.frameRate-offset);
+    }else voice(0,end);
     function add(time,value){
-      if(time>keys[keys.length-1].time+1e-8)keys.push({time,value});
-      else keys[keys.length-1].value=value;
+      const last=keys[keys.length-1];
+      if(time>last.time+1e-8)keys.push({time,value});else last.value=value;
     }
-    add(first,0);
-    for(const u of [.25,.75,1])add(first+attack*u,peak*u*u*(3-2*u));
-    add(last-release,peak);
-    for(const u of [.25,.75,1])add(last-release+release*u,peak*(1-u*u*(3-2*u)));
+    if(volume>0)for(const {start,stop} of spans){
+      const attack=Math.min(.09,(stop-start)*.45),release=Math.min(.12,(stop-start)*.45);
+      const times=[start,start+attack,stop-release,stop];
+      for(const t of [fadeIn,length-fadeOut])if(t>start&&t<stop)times.push(t);
+      for(const t of times.sort((a,b)=>a-b)){
+        const envelope=Math.max(0,Math.min(1,(t-start)/attack,(stop-t)/release));
+        const fade=Math.min(1,fadeIn?t/fadeIn:1,fadeOut?(length-t)/fadeOut:1);
+        add(t,75*volume*envelope*fade);
+      }
+    }
     add(length,0);
     return keys;
   }
-  function applyMouthLayers(active,lips){
+
+  function curveValue(keys,time){
+    const end=keys[keys.length-1][0],t=time%end;
+    const i=keys.findIndex(k=>k[0]>t);
+    const a=keys[i-1],b=keys[i],span=b[0]-a[0],u=(t-a[0])/span;
+    const h=u*u*(3-2*u);
+    return Math.max(0,Math.min(1,((1-h)*a[1]+h*b[1]+span*u*(1-u)*((1-u)*a[3]-u*b[2]))/100));
+  }
+
+  function applyTalkCycle(active,layer,profiles,supports){
+    const mouths=[...active].filter(([key,w])=>key.startsWith('b_mouth.')&&w>0);
+    const total=mouths.reduce((sum,[,v])=>sum+v,0),gain=layer.weight;
+    const add=(key,delta)=>active.set(key,(active.get(key)||0)+delta);
+    const neutralPulse=.45*(1-Math.cos(2*Math.PI*layer.cycleTime/(11/30)))/2;
+    for(const [key,weight] of mouths){
+      // Some base shapes have several authored profiles at different weights.
+      let best=null;
+      for(const profile of profiles){
+        if(profile.trigger!==key||best&&Math.abs(best.weight-weight)<=Math.abs(profile.weight-weight))continue;
+        if(!supports||profile.curves.every(c=>supports(c.shape)))best=profile;
+      }
+      if(!best){
+        const hint=weight*gain*neutralPulse*.35/Math.max(1,total);
+        add(key,-hint);add(layer.name,hint);
+        continue;
+      }
+      const share=weight*gain/Math.max(1,total);
+      add(key,-share);
+      for(const c of best.curves)add(c.shape,share*curveValue(c.keys,layer.cycleTime));
+    }
+    // A neutral mesh has no expression binding. Use a restrained default opening.
+    if(total<1)add(layer.name,(1-total)*gain*neutralPulse);
+    for(const [key,value] of active)if(key.startsWith('b_mouth.'))active.set(key,Math.max(0,Math.min(1,value)));
+  }
+  function applyMouthLayers(active,lips,profiles=[],supports){
     if(!lips.length)return;
     const overrides=lips.filter(layer=>!layer.emotion);
     if(overrides.length){
@@ -87,8 +136,9 @@
       for(const layer of overrides)active.set(layer.name,layer.weight);
       return;
     }
-    const {name,weight}=lips[lips.length-1];
+    const layer=lips[lips.length-1],{name,weight}=layer;
     if(weight<=0)return;
+    if(Number.isFinite(layer.cycleTime)){applyTalkCycle(active,layer,profiles,supports);return;}
     let expression=0;
     for(const [key,value] of active)if(key.startsWith('b_mouth.'))expression=Math.max(expression,value);
     // Strong authored expressions retain more of their lip contour. All other facial channels pass through.
@@ -96,13 +146,13 @@
     for(const [key,value] of active)if(key.startsWith('b_mouth.'))active.set(key,value*(1-mix));
     active.set(name,(active.get(name)||0)+mix);
   }
-  function combineFaceLayers(layers) {
+  function combineFaceLayers(layers,profiles,supports) {
     const active=new Map(),mouth=[];
     for(const layer of layers){
       if(layer.mouthOverride||layer.emotion)mouth.push(layer);
       else active.set(layer.name,layer.weight);
     }
-    applyMouthLayers(active,mouth);
+    applyMouthLayers(active,mouth,profiles,supports);
     return [...active].map(([name,weight])=>({name,weight}));
   }
   function phonemeKeys(timing,offset,length,fps,volume=1,fadeIn=0,fadeOut=0){

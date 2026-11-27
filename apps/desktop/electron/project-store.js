@@ -110,6 +110,7 @@ function validate(doc) {
       if(c.lipVisemes!==undefined)requireValid(t.type==='expression'&&obj(c.lipSyncSource)&&obj(c.lipVisemes)&&Object.keys(c.lipVisemes).length===5&&['a','i','u','e','o'].every(v=>typeof c.lipVisemes[v]==='string'&&/^b_mouth\.mouth_\d{3}$/.test(c.lipVisemes[v]))&&new Set(Object.values(c.lipVisemes)).size===5,'音素嘴形');
       if(c.lipEdited!==undefined)requireValid(typeof c.lipEdited==='boolean','手工口型标记');
       if(c.lipGeneration!==undefined)requireValid(text(c.lipGeneration)&&c.lipGeneration.length>0,'口型生成标识');
+      if(c.lipCycleOffset!==undefined)requireValid(c.lipMode==='emotion'&&finite(c.lipCycleOffset)&&c.lipCycleOffset>=0,'说话曲线时间偏移');
       if(c.lipMode!==undefined)requireValid(obj(c.lipSyncSource)&&['emotion','amplitude','phoneme','manual'].includes(c.lipMode)&&((c.lipMode==='amplitude'||c.lipMode==='emotion')===(c.lipVisemes===undefined)),'口型模式');
       if(c.dialogue!==undefined) requireValid(text(c.dialogue)&&dialogueIds.has(c.dialogue), '对话引用');
       if(c.muted!==undefined)requireValid(t.type==='audio'&&typeof c.muted==='boolean','静音开关');

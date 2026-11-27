@@ -82,10 +82,10 @@
    const local=time-clip.start,factor=fade(clip,local);
    if(clip.lipSyncSource){
     if(clip.lipVisemes)for(const [v,name] of Object.entries(clip.lipVisemes)){const keys=clip.propertyKeys?.['viseme_'+v];if(keys?.length)lips.push({name,weight:clamp(sampler(keys,local)/100)*factor});}
-    else {const shape=env.shape(clip.assetId);if(shape)lips.push({name:shape.source,emotion:clip.lipMode==='emotion',weight:clamp((clip.propertyKeys?.weight?.length?sampler(clip.propertyKeys.weight,local):clip.weight??80)/100)*factor});}
+    else {const shape=env.shape(clip.assetId);if(shape)lips.push({name:shape.source,emotion:clip.lipMode==='emotion',cycleTime:clip.lipCycleOffset===undefined?undefined:local+clip.lipCycleOffset,weight:clamp((clip.propertyKeys?.weight?.length?sampler(clip.propertyKeys.weight,local):clip.weight??80)/100)*factor});}
    }else if(env.face(clip.assetId)||env.shape(clip.assetId))apply(clip,local+(clip.sourceOffset||0),factor);
   }
-  if(lips.length)lipSync.applyMouthLayers(values,lips);
+  if(lips.length)lipSync.applyMouthLayers(values,lips,env.talkProfiles,env.supports);
   return [...values].map(([name,weight])=>({name,weight,...(times.has(name)?{time:times.get(name)}:{})}));
  }
  function matchesFilter(def,filter){if(filter==='all')return true;if(!def)return false;if(filter==='pose')return def.isPose===true;if(filter==='animation')return def.isPose===false;if(filter==='overlay')return def.overlayReady===true;return false;}
