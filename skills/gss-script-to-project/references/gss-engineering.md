@@ -13,6 +13,22 @@
 - 句中改口或领悟时，让动作、表情各自绑定触发它的对白。可用 `storyTiming = {start: {unitId, edge: "speechStart", offset: t}, keys: "keep"}`，其中 `t` 为该词或停顿相对本句语音开始的秒数。若动作有蓄势，把进入点稍微前移，让抬头、收手等看得见的变化落在重音上。重新 Cook 后核对实际语速和句内偏移。
 - 同一手势跨句延续时，可把片段终点绑在下一次收势或转折处，眉眼表情在自己的落点调整。当前 `layerPlayback: true`、`loop: false` 可在进入动画结束后保持末态，`keys: keep` 可保留渐变秒数。缺独立退出素材时可用 `fadeOut` 混合回常驻。复查实际画面中身体是否顺畅衔接，以及眉眼表情与对白嘴形能否同时读出。
 
+## 脸部贴花与同帧验证
+
+在目标角色的「添加表情片段」里可按「完整表情」「单项形变」「贴花 / 特效」筛选。检查完整表情是否自带贴花时，读当前受管理批次里实际生效的曲线。直接查缓存要同时看 `face-animation/clips/` 与 `face-animation/decal-curves/` 下的同名文件。例如通用表情 `mot_all_chr_cmmn_facial-all-jito1-ikari1_in_f` 在已验证的镜头里只驱动眉、眼、嘴。
+
+| 原稿要求的可见变化 | GSS 素材名 | 通道 |
+| --- | --- | --- |
+| 额头和眼周压暗，呈现黑脸 | 脸部阴影 | `decal.Shadow` |
+| 脸色发白 | 脸色苍白 | `decal.Pale` |
+| 双颊泛红，或出现漫画红线 | 双颊脸红、双颊脸红线 | `decal.CheekWhole`、`decal.CheekLineWhole` |
+| 惊讶时脸上出现阴影线 | 惊讶阴影线 | `effect.Gloom` |
+| 惊讶时眼睛变成圆眼 | 圆眼惊讶 | `effect.RoundEyes` |
+
+给一段反应补黑脸时，在 `type` 为 `expression`、`layerRole` 为 `overlay` 的轨道上将 `target` 设为实际角色 ID。贴花片段的 `assetId` 用 `asset-face-decal.Shadow`，起止用 `storyTiming` 对齐反应。工程里的 `weight` 范围是 0–100。脸部阴影可以渐变，强度按画面选择。当前的圆眼和惊讶阴影线在有效权重达到 50% 时显示。
+
+排查漏显时，用 `preview.seek` 定位到效果应清晰可见的一帧，在 `snapshot.actorInstances` 中按角色 ID 查 `faceShapes`。`decal.Shadow` 的预览权重范围是 0–1。缺少通道时查实际素材、轨道目标和启用状态，权重为零时查起止、淡变和权重关键帧。权重符合预期时，在正式版同一机位、同一帧开关贴花对照额头和眼周。若画面仍无变化，再查当前批次的角色贴花资源和 Player 的渲染支持。
+
 ## 静态姿势＋原生律动
 
 以下是当前 GSS 常驻层结构示意，实际 assetId 应从当前目录解析，不能原样使用占位值：
